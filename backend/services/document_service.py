@@ -167,6 +167,26 @@ class DocumentService:
                     print(f"[DocumentService] ⚡ File '{filename}' đã tồn tại trong CSDL (SHA-256: {file_hash[:12]}...). Tái sử dụng kết quả OCR!")
                     doc_result = existing_doc["ocr_data_json"]
                     doc_result["file_hash"] = file_hash
+
+                    category = existing_doc.get("category") or doc_result.get("category", "khac")
+                    target_category_dir = os.path.join(doc_dir, category)
+                    os.makedirs(target_category_dir, exist_ok=True)
+                    target_doc_path = os.path.join(target_category_dir, filename)
+
+                    if os.path.exists(input_file_path) and os.path.abspath(input_file_path) != os.path.abspath(target_doc_path):
+                        if os.path.exists(target_doc_path):
+                            try:
+                                os.remove(target_doc_path)
+                            except Exception:
+                                pass
+                        shutil.move(input_file_path, target_doc_path)
+
+                    final_path = os.path.abspath(target_doc_path) if os.path.exists(target_doc_path) else (os.path.abspath(input_file_path) if os.path.exists(input_file_path) else existing_doc.get("file_path", doc_result.get("file_path")))
+                    doc_result["file_path"] = final_path
+                    doc_result["original_filename"] = filename
+                    doc_result["category"] = category
+
+                    self._save_ocr_output_to_test_ocr(filename, category, doc_result)
                     return doc_result
             except Exception as db_err:
                 print(f"[DocumentService] Lỗi khi tra cứu DB cache: {db_err}")
@@ -227,9 +247,15 @@ class DocumentService:
                     print(f"[DocumentService] ⚡ File '{filename}' đã có kết quả OCR trong CSDL (SHA-256: {file_hash[:12]}...). Bỏ qua xử lý lại!")
                     doc_result = existing_doc["ocr_data_json"]
                     doc_result["file_hash"] = file_hash
+                    doc_result["file_path"] = real_path
+                    doc_result["original_filename"] = filename
+                    if existing_doc.get("category"):
+                        doc_result["category"] = existing_doc["category"]
+                    self._save_ocr_output_to_test_ocr(filename, doc_result.get("category", "khac"), doc_result)
                     return doc_result
             except Exception as db_err:
                 print(f"[DocumentService] Cảnh báo tra cứu cache DB: {db_err}")
+
 
         if ext == '.txt':
             with open(real_path, 'r', encoding='utf-8', errors='ignore') as f:

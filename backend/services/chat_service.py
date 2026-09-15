@@ -1,13 +1,19 @@
 import os
 
 try:
-    from memory_service import ChatMemory
-    from ai_service import AIService
-    from document_service import DocumentService
+    from services.memory_service import ChatMemory
+    from services.ai_service import AIService
+    from services.document_service import DocumentService
 except ImportError:
-    from backend.services.memory_service import ChatMemory
-    from backend.services.ai_service import AIService
-    from backend.services.document_service import DocumentService
+    try:
+        from .memory_service import ChatMemory
+        from .ai_service import AIService
+        from .document_service import DocumentService
+    except ImportError:
+        from backend.services.memory_service import ChatMemory
+        from backend.services.ai_service import AIService
+        from backend.services.document_service import DocumentService
+
 
 
 class ChatService:

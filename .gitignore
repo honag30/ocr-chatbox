@@ -64,3 +64,6 @@ storage/input/*
 archive/
 test-chatbox/
 test-ocr/
+
+.prettierrc
+.prettierignore
