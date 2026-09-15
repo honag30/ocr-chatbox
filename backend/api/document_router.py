@@ -4,11 +4,11 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
 
 try:
-    from config import DOC_DIR, INPUT_DIR, UPLOAD_DIR
+    from config import DOC_DIR
     from services.document_service import SUPPORTED_EXTENSIONS
     from api.chat_router import chat_service, format_ai_error
 except ImportError:
-    from backend.config import DOC_DIR, INPUT_DIR, UPLOAD_DIR
+    from backend.config import DOC_DIR
     from backend.services.document_service import SUPPORTED_EXTENSIONS
     from backend.api.chat_router import chat_service, format_ai_error
 

@@ -47,13 +47,13 @@ class DocumentService:
         if os.path.isfile(clean_path):
             return os.path.abspath(clean_path)
 
-        for base in [DOC_DIR, INPUT_DIR, UPLOAD_DIR, TEST_OCR_DIR]:
+        for base in [DOC_DIR, TEST_OCR_DIR]:
             test_rel = os.path.join(base, clean_path)
             if os.path.isfile(test_rel):
                 return os.path.abspath(test_rel)
 
         target_name = os.path.basename(clean_path)
-        for search_root in [DOC_DIR, INPUT_DIR, UPLOAD_DIR]:
+        for search_root in [DOC_DIR]:
             if os.path.exists(search_root):
                 for root, _, files in os.walk(search_root):
                     if target_name in files:
@@ -135,25 +135,23 @@ class DocumentService:
             print(f"[DocumentService] Không thể lưu output OCR: {e}")
 
     def process_file_pipeline(self, file_source, filename: str) -> dict:
-        """Luồng đầy đủ lưu file, phân loại, bóc tách và lưu DB."""
-        input_dir = INPUT_DIR
+        """Luồng lưu file trực tiếp vào storage/doc/, phân loại, bóc tách và lưu DB."""
         doc_dir = DOC_DIR
-        os.makedirs(input_dir, exist_ok=True)
         os.makedirs(doc_dir, exist_ok=True)
 
-        input_file_path = os.path.join(input_dir, filename)
+        temp_file_path = os.path.join(doc_dir, f"_temp_{filename}")
 
         if isinstance(file_source, bytes):
-            with open(input_file_path, "wb") as f:
+            with open(temp_file_path, "wb") as f:
                 f.write(file_source)
         elif hasattr(file_source, "read"):
-            with open(input_file_path, "wb") as buffer:
+            with open(temp_file_path, "wb") as buffer:
                 shutil.copyfileobj(file_source, buffer)
         elif isinstance(file_source, str) and os.path.isfile(file_source):
-            if os.path.abspath(file_source) != os.path.abspath(input_file_path):
-                shutil.copy2(file_source, input_file_path)
+            if os.path.abspath(file_source) != os.path.abspath(temp_file_path):
+                shutil.copy2(file_source, temp_file_path)
 
-        file_hash = self.calculate_file_hash(input_file_path)
+        file_hash = self.calculate_file_hash(temp_file_path)
 
         if file_hash:
             try:
@@ -173,15 +171,15 @@ class DocumentService:
                     os.makedirs(target_category_dir, exist_ok=True)
                     target_doc_path = os.path.join(target_category_dir, filename)
 
-                    if os.path.exists(input_file_path) and os.path.abspath(input_file_path) != os.path.abspath(target_doc_path):
-                        if os.path.exists(target_doc_path):
+                    if os.path.exists(temp_file_path):
+                        if os.path.exists(target_doc_path) and os.path.abspath(temp_file_path) != os.path.abspath(target_doc_path):
                             try:
                                 os.remove(target_doc_path)
                             except Exception:
                                 pass
-                        shutil.move(input_file_path, target_doc_path)
+                        shutil.move(temp_file_path, target_doc_path)
 
-                    final_path = os.path.abspath(target_doc_path) if os.path.exists(target_doc_path) else (os.path.abspath(input_file_path) if os.path.exists(input_file_path) else existing_doc.get("file_path", doc_result.get("file_path")))
+                    final_path = os.path.abspath(target_doc_path) if os.path.exists(target_doc_path) else existing_doc.get("file_path", doc_result.get("file_path"))
                     doc_result["file_path"] = final_path
                     doc_result["original_filename"] = filename
                     doc_result["category"] = category
@@ -195,7 +193,7 @@ class DocumentService:
         cat_conf = 50.0
         if classify_document:
             try:
-                cat_res, conf_res = classify_document(input_file_path)
+                cat_res, conf_res = classify_document(temp_file_path)
                 if cat_res:
                     category = cat_res
                     cat_conf = conf_res
@@ -206,14 +204,13 @@ class DocumentService:
         os.makedirs(target_category_dir, exist_ok=True)
         target_doc_path = os.path.join(target_category_dir, filename)
 
-        if os.path.exists(target_doc_path) and os.path.abspath(input_file_path) != os.path.abspath(target_doc_path):
-            try:
-                os.remove(target_doc_path)
-            except Exception:
-                pass
-        
-        if os.path.exists(input_file_path) and os.path.abspath(input_file_path) != os.path.abspath(target_doc_path):
-            shutil.move(input_file_path, target_doc_path)
+        if os.path.exists(temp_file_path):
+            if os.path.exists(target_doc_path) and os.path.abspath(temp_file_path) != os.path.abspath(target_doc_path):
+                try:
+                    os.remove(target_doc_path)
+                except Exception:
+                    pass
+            shutil.move(temp_file_path, target_doc_path)
 
         doc_result = self.process_file(target_doc_path)
         doc_result["category"] = category
