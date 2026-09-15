@@ -1,0 +1,12 @@
+openai
+python-dotenv
+pymupdf
+pdfplumber
+pypdf
+easyocr
+torch
+opencv-python
+python-docx
+openpyxl
+numpy
+pymysql
