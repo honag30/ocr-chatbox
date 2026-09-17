@@ -137,3 +137,75 @@ def detect_headers_footers(page_texts: list[str], top_n_lines: int = 3, bottom_n
     footers = {line for line, count in footer_candidates.items() if count / total_pages >= threshold}
 
     return headers, footers
+
+
+def normalize_financial_number(val: str) -> float | None:
+    """
+    Chuẩn hóa và bóc tách giá trị số tài chính/bảng biểu đa chuẩn:
+    - Chuẩn Việt Nam / Châu Âu: 1.234.567,89 hoặc 12,5%
+    - Chuẩn Quốc tế: 1,234,567.89
+    - Số âm kế toán: (1.000.000) hoặc -1.000.000
+    - Đơn vị tiền tệ: VND, VNĐ, đ, USD, $
+    """
+    if not val:
+        return None
+
+    s = str(val).strip()
+    if not s:
+        return None
+
+    # Nhận diện số âm kế toán: (1.000.000)
+    is_negative = False
+    if (s.startswith("(") and s.endswith(")")) or s.startswith("-"):
+        is_negative = True
+        s = s.strip("()- ")
+
+    # Loại bỏ tiền tệ, phần trăm, và ký tự thừa
+    s = re.sub(r'(?i)\b(vnd|vnđ|usd|eur|đ|\$|\%)\b', '', s).strip()
+    # Giữ lại chỉ số, dấu chấm, dấu phẩy
+    s = re.sub(r'[^\d\.\,]', '', s).strip()
+    if not s:
+        return None
+
+    # Phân tích dấu phân cách
+    if "." in s and "," in s:
+        # Cả hai dấu cùng xuất hiện
+        last_dot = s.rfind(".")
+        last_comma = s.rfind(",")
+        if last_comma > last_dot:
+            # 1.234.567,89 -> Dấu phẩy là thập phân
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            # 1,234,567.89 -> Dấu chấm là thập phân
+            s = s.replace(",", "")
+    elif "," in s:
+        parts = s.split(",")
+        if len(parts) == 2 and len(parts[1]) in (1, 2):
+            # 12,5 hoặc 12,50 -> Thập phân
+            s = parts[0] + "." + parts[1]
+        elif len(parts) > 1 and all(len(p) == 3 for p in parts[1:]):
+            # 1,000,000 -> Phân cách hàng ngàn
+            s = "".join(parts)
+        else:
+            # Fallback nếu 1 dấu phẩy cách 3 số (1,000)
+            if len(parts) == 2 and len(parts[1]) == 3:
+                s = "".join(parts)
+            else:
+                s = s.replace(",", ".")
+    elif "." in s:
+        parts = s.split(".")
+        if len(parts) > 2:
+            # 1.000.000 -> Phân cách hàng ngàn
+            s = "".join(parts)
+        elif len(parts) == 2:
+            # 12.5 -> Thập phân nếu 1-2 chữ số; nếu 3 chữ số (10.000) -> Phân cách hàng ngàn
+            if len(parts[1]) == 3:
+                s = "".join(parts)
+            else:
+                s = parts[0] + "." + parts[1]
+
+    try:
+        res = float(s)
+        return -res if is_negative else res
+    except ValueError:
+        return None

@@ -48,6 +48,37 @@ CREATE_TABLES_SQL = [
         FOREIGN KEY (session_id) REFERENCES chat_sessions(session_id) ON DELETE CASCADE,
         FOREIGN KEY (document_id) REFERENCES ocr_documents(id) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS evidence_packages (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        evidence_package_id VARCHAR(64) UNIQUE NOT NULL,
+        document_id VARCHAR(64) NOT NULL,
+        artifact_id VARCHAR(64) NOT NULL,
+        document_type VARCHAR(64) NOT NULL,
+        verification_status VARCHAR(32) DEFAULT 'UNVERIFIED',
+        publish_status VARCHAR(32) DEFAULT 'PENDING',
+        overall_confidence FLOAT DEFAULT 0.0,
+        review_required TINYINT(1) DEFAULT 0,
+        payload_json LONGTEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_pkg_id (evidence_package_id),
+        INDEX idx_doc_id (document_id),
+        INDEX idx_verif (verification_status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS document_relationships (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        from_document_id VARCHAR(64) NOT NULL,
+        relationship VARCHAR(64) NOT NULL,
+        to_document_id VARCHAR(64) NOT NULL,
+        confidence FLOAT DEFAULT 0.95,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_from_doc (from_document_id),
+        INDEX idx_to_doc (to_document_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     """
 ]
 

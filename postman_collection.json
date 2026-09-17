@@ -1,0 +1,471 @@
+{
+	"info": {
+		"_postman_id": "a3f58b90-1c2d-4e8f-9a3b-7f6c5e4d3c2b",
+		"name": "AI Document Chatbox System API",
+		"description": "Postman Collection test toàn bộ API cho hệ thống AI Document Chatbox Engine (Backend FastAPI)",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://127.0.0.1:8000",
+			"type": "string"
+		},
+		{
+			"key": "sessionId",
+			"value": "DEFAULT_SESSION",
+			"type": "string"
+		},
+		{
+			"key": "evidencePackageId",
+			"value": "PKG_SAMPLE",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Health Check",
+			"item": [
+				{
+					"name": "Health Check Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/health",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"health"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Document Management",
+			"item": [
+				{
+					"name": "Upload Document (OCR & Summarize)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								},
+								{
+									"key": "instruction",
+									"value": "Tóm tắt các ý chính và trích xuất thông tin quan trọng",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/document/upload",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"document",
+								"upload"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Select Existing File",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"file_path\": \"doc/hoa_don/hoa_don_mua_ban_nha_dat_xuong.pdf\",\n  \"instruction\": \"Phân tích nội dung điều khoản hợp đồng\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/document/select-file",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"document",
+								"select-file"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Available Files",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/document/files",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"document",
+								"files"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Chatbox & Sessions",
+			"item": [
+				{
+					"name": "Get Chat Sessions List",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/chatbox/sessions",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"chatbox",
+								"sessions"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create New Session",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/chatbox/sessions",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"chatbox",
+								"sessions"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Switch Chat Session",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"session_id\": \"{{sessionId}}\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/chatbox/sessions/switch",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"chatbox",
+								"sessions",
+								"switch"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Chat Session",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/chatbox/sessions/{{sessionId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"chatbox",
+								"sessions",
+								"{{sessionId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Session History",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/chatbox/history",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"chatbox",
+								"history"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Clear Session History",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/chatbox/clear",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"chatbox",
+								"clear"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Active Document Result",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/chatbox/doc-result",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"chatbox",
+								"doc-result"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Send Chat Message",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"message\": \"Hãy tóm tắt ngắn gọn các điểm chính trong tài liệu vừa tải lên.\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/chatbox/chat",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"chatbox",
+								"chat"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Evidence Extraction Engine",
+			"item": [
+				{
+					"name": "Extract Evidence Truth",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"file_path\": \"doc/hoa_don/hoa_don_mua_ban_nha_dat_xuong.pdf\",\n  \"organization_id\": \"ORG-001\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/evidence/extract",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"evidence",
+								"extract"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Document Relationship Graph",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/evidence/graph",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"evidence",
+								"graph"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Evidence Package Detail",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/evidence/{{evidencePackageId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"evidence",
+								"{{evidencePackageId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Verify Evidence Package",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"notes\": \"Bằng chứng đã được đối soát và chính xác 100%\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/evidence/{{evidencePackageId}}/verify",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"evidence",
+								"{{evidencePackageId}}",
+								"verify"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Reject Evidence Package",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"notes\": \"Phát hiện mâu thuẫn số liệu với chứng từ gốc\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/evidence/{{evidencePackageId}}/reject",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"evidence",
+								"{{evidencePackageId}}",
+								"reject"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Publish Evidence Package",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"status\": \"PUBLISHED\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/evidence/{{evidencePackageId}}/publish",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"evidence",
+								"{{evidencePackageId}}",
+								"publish"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}

@@ -20,11 +20,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.health_router import router as health_router
 from api.chat_router import router as chat_router
 from api.document_router import router as document_router
+from api.evidence_router import router as evidence_router
 from db.models import init_db
 
 app = FastAPI(
     title="AI Document Chatbox System API",
-    description="Backend Clean Architecture API kết nối Gemini AI & Core OCR Engine",
+    description="Backend Clean Architecture API kết nối Gemini AI & Core OCR Engine & Evidence Extraction Engine",
     version="2.0.0"
 )
 
@@ -41,6 +42,7 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(chat_router)
 app.include_router(document_router)
+app.include_router(evidence_router)
 
 
 @app.on_event("startup")

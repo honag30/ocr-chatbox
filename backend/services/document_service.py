@@ -93,6 +93,19 @@ class DocumentService:
                 metrics = evaluate_text_accuracy(lines, line_confidences=all_confs if all_confs else None)
                 eval_report = print_evaluation_report(metrics, title=f"ĐÁNH GIÁ TRÍCH XUẤT: {filename}")
 
+            # ==================================================================
+            # [LOGIC TẠM THỜI - SẼ XÓA SAU NÀY] Lưu kết quả vào folder: [OCR] {tên tài liệu}
+            # ==================================================================
+            try:
+                try:
+                    from services.temp_ocr_saver import save_temp_ocr_folder
+                except ImportError:
+                    from backend.services.temp_ocr_saver import save_temp_ocr_folder
+                save_temp_ocr_folder(filename, doc_result)
+            except Exception as temp_err:
+                print(f"[DocumentService] Cảnh báo lưu folder tạm [OCR]: {temp_err}")
+            # ==================================================================
+
             db_saved = False
             try:
                 try:

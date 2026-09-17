@@ -3,6 +3,7 @@ import Sidebar from './components/Sidebar';
 import ChatArea from './components/ChatArea';
 import DropZone from './components/DropZone';
 import DocInspector from './components/DocInspector';
+import EvidenceInspector from './components/EvidenceInspector';
 
 /**
  * Đọc JSON từ response một cách an toàn.
@@ -52,7 +53,7 @@ export default function App() {
 
   const fetchFiles = async () => {
     try {
-      const res = await fetch('/api/files');
+      const res = await fetch('/api/document/files');
       const data = await res.json();
       if (data.status === 'success') {
         setFilesList(data.files || []);
@@ -64,7 +65,7 @@ export default function App() {
 
   const fetchSessions = async () => {
     try {
-      const res = await fetch('/api/sessions');
+      const res = await fetch('/api/chatbox/sessions');
       const data = await res.json();
       if (data.status === 'success') {
         setSessions(data.sessions || []);
@@ -79,7 +80,7 @@ export default function App() {
 
   const fetchHistory = async () => {
     try {
-      const res = await fetch('/api/history');
+      const res = await fetch('/api/chatbox/history');
       const data = await res.json();
       if (data.status === 'success') {
         if (data.session_id) {
@@ -109,7 +110,7 @@ export default function App() {
   const handleSelectSession = async (sessionId) => {
     if (sessionId === currentSessionId) return;
     try {
-      const res = await fetch('/api/sessions/switch', {
+      const res = await fetch('/api/chatbox/sessions/switch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: sessionId }),
@@ -136,7 +137,7 @@ export default function App() {
 
   const handleCreateNewSession = async () => {
     try {
-      const res = await fetch('/api/sessions', { method: 'POST' });
+      const res = await fetch('/api/chatbox/sessions', { method: 'POST' });
       const data = await res.json();
       if (data.status === 'success') {
         setCurrentSessionId(data.session_id);
@@ -152,7 +153,7 @@ export default function App() {
 
   const handleDeleteSession = async (sessionId) => {
     try {
-      const res = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/chatbox/sessions/${sessionId}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.status === 'success') {
         setSessions(data.sessions || []);
@@ -189,7 +190,7 @@ export default function App() {
     setIsLoading(true);
 
     try {
-      const res = await fetch('/api/chat', {
+      const res = await fetch('/api/chatbox/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text }),
@@ -220,6 +221,10 @@ export default function App() {
     }
   };
 
+  const [evidencePackage, setEvidencePackage] = useState(null);
+  const [isExtractingEvidence, setIsExtractingEvidence] = useState(false);
+  const [evidenceError, setEvidenceError] = useState(null);
+
   const handleFileUpload = async (file, instruction = '') => {
     if (!file || isUploading) return;
 
@@ -237,7 +242,7 @@ export default function App() {
 
       let res;
       try {
-        res = await fetch('/api/upload', {
+        res = await fetch('/api/document/upload', {
           method: 'POST',
           body: formData,
           signal: controller.signal,
@@ -251,23 +256,27 @@ export default function App() {
       if (!res.ok) throw new Error(data.detail || 'Lỗi khi upload file');
 
       setActiveDoc(data.doc_result);
+      setEvidencePackage(null);
 
-      // Thêm message thông báo upload và tóm tắt
-      const userMsg = {
-        role: 'user',
-        content: `Tải lên và phân tích tài liệu: **${data.filename}**`,
-        docResult: data.doc_result,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
+      // Thêm message thông báo upload và tóm tắt nếu không ở tab Evidence
+      if (activeTab !== 'evidence') {
+        const userMsg = {
+          role: 'user',
+          content: `Tải lên và phân tích tài liệu: **${data.filename}**`,
+          docResult: data.doc_result,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        };
 
-      const aiMsg = {
-        role: 'assistant',
-        content: data.summary,
-        docResult: data.doc_result,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
+        const aiMsg = {
+          role: 'assistant',
+          content: data.summary,
+          docResult: data.doc_result,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        };
 
-      setMessages((prev) => [...prev, userMsg, aiMsg]);
+        setMessages((prev) => [...prev, userMsg, aiMsg]);
+      }
+
       fetchFiles(); // Refresh file list
       fetchSessions(); // Refresh sessions list
     } catch (err) {
@@ -284,7 +293,19 @@ export default function App() {
   };
 
   const handleSelectFile = async (filePath) => {
-    if (isUploading) return;
+    if (isUploading || isExtractingEvidence) return;
+
+    const fileName = filePath.split(/[/\\]/).pop();
+    const docObj = { file_path: filePath, original_filename: fileName };
+    setActiveDoc(docObj);
+
+    // Nếu đang ở tab Evidence, chỉ trích xuất Evidence Truth không chạy tóm tắt Chat
+    if (activeTab === 'evidence') {
+      setEvidencePackage(null);
+      handleExtractEvidence(filePath);
+      return;
+    }
+
     setIsUploading(true);
 
     try {
@@ -293,7 +314,7 @@ export default function App() {
 
       let res;
       try {
-        res = await fetch('/api/select-file', {
+        res = await fetch('/api/document/select-file', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ file_path: filePath }),
@@ -340,7 +361,7 @@ export default function App() {
 
   const handleClearChat = async () => {
     try {
-      await fetch('/api/clear', { method: 'POST' });
+      await fetch('/api/chatbox/clear', { method: 'POST' });
       setMessages([]);
       setActiveDoc(null);
       setInspectorDoc(null);
@@ -373,6 +394,100 @@ export default function App() {
     }
   };
 
+  // Reset evidencePackage when activeDoc changes
+  useEffect(() => {
+    setEvidencePackage(null);
+  }, [activeDoc]);
+
+  // Trigger evidence extraction when activeDoc or activeTab changes
+  useEffect(() => {
+    if (activeTab === 'evidence' && !evidencePackage && !isExtractingEvidence) {
+      handleExtractEvidence();
+    }
+  }, [activeDoc, activeTab, evidencePackage]);
+
+  const handleExtractEvidence = async (targetFilePath = null) => {
+    let filePath = targetFilePath || (activeDoc ? (activeDoc.file_path || activeDoc.original_filename) : null);
+    if (!filePath && filesList && filesList.length > 0) {
+      filePath = filesList[0].path || filesList[0].name;
+      const fileName = filePath.split(/[/\\]/).pop();
+      setActiveDoc({ file_path: filePath, original_filename: fileName });
+    }
+    if (!filePath) {
+      setEvidenceError('Vui lòng chọn một tài liệu từ danh sách bên trái hoặc tải file mới lên.');
+      return;
+    }
+    setIsExtractingEvidence(true);
+    setEvidenceError(null);
+    try {
+      const res = await fetch('/api/evidence/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_path: filePath })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || `Lỗi từ server khi bóc tách Evidence (HTTP ${res.status})`);
+      }
+      setEvidencePackage(data);
+      setEvidenceError(null);
+    } catch (err) {
+      console.error('Lỗi khi bóc tách Evidence:', err);
+      setEvidenceError(err.message);
+    } finally {
+      setIsExtractingEvidence(false);
+    }
+  };
+
+  const handleVerifyEvidence = async (pkgId) => {
+    try {
+      const res = await fetch(`/api/evidence/${pkgId}/verify`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        setEvidencePackage(prev => prev ? {
+          ...prev,
+          trust: { ...prev.trust, verification_status: 'VERIFIED', review_required: false, publish_status: 'ELIGIBLE' }
+        } : null);
+      }
+    } catch (err) {
+      console.error('Lỗi khi verify Evidence:', err);
+    }
+  };
+
+  const handleRejectEvidence = async (pkgId) => {
+    try {
+      const res = await fetch(`/api/evidence/${pkgId}/reject`, { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        setEvidencePackage(prev => prev ? {
+          ...prev,
+          trust: { ...prev.trust, verification_status: 'REJECTED', review_required: false, publish_status: 'BLOCKED' }
+        } : null);
+      }
+    } catch (err) {
+      console.error('Lỗi khi reject Evidence:', err);
+    }
+  };
+
+  const handlePublishEvidence = async (pkgId) => {
+    try {
+      const res = await fetch(`/api/evidence/${pkgId}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'PUBLISHED' })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setEvidencePackage(prev => prev ? {
+          ...prev,
+          trust: { ...prev.trust, publish_status: 'PUBLISHED' }
+        } : null);
+      }
+    } catch (err) {
+      console.error('Lỗi khi publish Evidence:', err);
+    }
+  };
+
   return (
     <div 
       className="app-container"
@@ -402,20 +517,36 @@ export default function App() {
         onToggleTheme={toggleTheme}
       />
 
-      <ChatArea 
-        messages={messages}
-        isLoading={isLoading}
-        isUploading={isUploading}
-        onSendMessage={handleSendMessage}
-        onFileUpload={handleFileUpload}
-        onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
-        sidebarCollapsed={sidebarCollapsed}
-        activeDoc={activeDoc}
-        onOpenDocInspector={(doc) => setInspectorDoc(doc)}
-        onSelectPrompt={handleSendMessage}
-        theme={theme}
-        onToggleTheme={toggleTheme}
-      />
+      {activeTab === 'evidence' ? (
+        <EvidenceInspector
+          evidencePackage={evidencePackage}
+          isExtracting={isExtractingEvidence}
+          activeDoc={activeDoc}
+          filesList={filesList}
+          error={evidenceError}
+          onSelectFile={handleSelectFile}
+          onFileUpload={handleFileUpload}
+          onVerify={handleVerifyEvidence}
+          onReject={handleRejectEvidence}
+          onPublish={handlePublishEvidence}
+          onExtractNew={handleExtractEvidence}
+        />
+      ) : (
+        <ChatArea 
+          messages={messages}
+          isLoading={isLoading}
+          isUploading={isUploading}
+          onSendMessage={handleSendMessage}
+          onFileUpload={handleFileUpload}
+          onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
+          sidebarCollapsed={sidebarCollapsed}
+          activeDoc={activeDoc}
+          onOpenDocInspector={(doc) => setInspectorDoc(doc)}
+          onSelectPrompt={handleSendMessage}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+        />
+      )}
 
       {inspectorDoc && (
         <DocInspector 

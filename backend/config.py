@@ -25,8 +25,23 @@ TEST_OCR_DIR = ROOT_DIR
 for d in [STORAGE_DIR, DOC_DIR]:
     os.makedirs(d, exist_ok=True)
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME", "gemini-2.5-flash")
+# Quản lý và xoay vòng API Keys
+try:
+    from services.key_rotator import key_manager, KeyManager
+except ImportError:
+    from backend.services.key_rotator import key_manager, KeyManager
+
+GEMINI_API_KEYS = [k.key for k in key_manager.keys]
+GEMINI_API_KEY = key_manager.get_active_key(advance=False) or os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
+raw_model = os.getenv("MODEL_NAME", "gemini-3.6-flash").strip()
+if raw_model in ("gemini-3", "gemini-3-flash", "gemini-3.0-flash", "", "gemini-2.5-flash"):
+    MODEL_NAME = "gemini-3.6-flash"
+else:
+    MODEL_NAME = raw_model
+
+def get_gemini_api_key() -> str:
+    """Lấy API key tiếp theo từ KeyManager với cơ chế xoay vòng."""
+    return key_manager.get_active_key(advance=True) or GEMINI_API_KEY
 
 # MySQL Database Configuration
 MYSQL_HOST = os.getenv("MYSQL_HOST", "127.0.0.1")

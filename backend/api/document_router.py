@@ -12,7 +12,7 @@ except ImportError:
     from backend.services.document_service import SUPPORTED_EXTENSIONS
     from backend.api.chat_router import chat_service, format_ai_error
 
-router = APIRouter(tags=["Document Management"])
+router = APIRouter(prefix="/api/document", tags=["Document Management"])
 
 
 class SelectFileRequest(BaseModel):
@@ -20,7 +20,7 @@ class SelectFileRequest(BaseModel):
     instruction: Optional[str] = None
 
 
-@router.post("/api/upload")
+@router.post("/upload")
 async def upload_document(
     file: UploadFile = File(...),
     instruction: Optional[str] = Form(None)
@@ -51,7 +51,7 @@ async def upload_document(
         raise HTTPException(status_code=500, detail=format_ai_error(e))
 
 
-@router.post("/api/select-file")
+@router.post("/select-file")
 def select_existing_file(request: SelectFileRequest):
     try:
         summary, doc_result = chat_service.upload_and_summarize(
@@ -69,7 +69,7 @@ def select_existing_file(request: SelectFileRequest):
         raise HTTPException(status_code=500, detail=format_ai_error(e))
 
 
-@router.get("/api/files")
+@router.get("/files")
 def list_available_files():
     file_list = []
     if os.path.exists(DOC_DIR):

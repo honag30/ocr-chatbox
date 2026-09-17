@@ -159,15 +159,15 @@ def classify_document(file_path: str) -> tuple[str, float]:
     full_text_unaccented = remove_accents(full_text).upper()
     filename_unaccented = remove_accents(filename).lower()
 
-    # Điểm số cho từng danh mục
+    # Điểm số cho 4 danh mục chính (nếu không đủ ngưỡng sẽ là 'other')
     scores = {
-        'hop_dong': 0,
-        'hoa_don': 0,
-        'chung_tu': 0,
-        'anh_chuyen_khoan': 0
+        'contract': 0,
+        'invoice': 0,
+        'warehouse_voucher': 0,
+        'bank_transfer': 0
     }
 
-    # 1. KIỂM TRA ẢNH CHUYỂN KHOẢN / BIÊN NHẬN NGÂN HÀNG
+    # 1. KIỂM TRA ẢNH CHUYỂN KHOẢN / BIÊN NHẬN NGÂN HÀNG (BANK_TRANSFER)
     transfer_keywords = [
         "CHUYEN KHOAN THANH CONG", "GIAO DICH THANH CONG", "CHUYEN TIEN THANH CONG",
         "BIEN NHAN CHUYEN TIEN", "XAC NHAN CHUYEN TIEN", "THONG TIN CHUYEN KHOAN",
@@ -177,9 +177,9 @@ def classify_document(file_path: str) -> tuple[str, float]:
     ]
     for kw in transfer_keywords:
         if kw in full_text_unaccented:
-            scores['anh_chuyen_khoan'] += 45
+            scores['bank_transfer'] += 45
         if kw in header_unaccented:
-            scores['anh_chuyen_khoan'] += 20
+            scores['bank_transfer'] += 20
 
     fn_transfer_clues = [
         "chuyen_khoan", "chuyenkhoan", "chuyen_tien", "giao_dich",
@@ -187,16 +187,11 @@ def classify_document(file_path: str) -> tuple[str, float]:
         "mb", "mbbank", "techcombank", "tcb"
     ]
     if any(c in filename_unaccented for c in fn_transfer_clues):
-        scores['anh_chuyen_khoan'] += 35
+        scores['bank_transfer'] += 35
 
-    # Một số ảnh chụp màn hình ngân hàng có thể không OCR được (nền tối,
-    # chữ sáng hoặc lớp thông báo che phần đầu ảnh). Tên file thường vẫn
-    # giữ lại dấu hiệu VCB/Digibank, nên dùng thêm tín hiệu nhẹ này thay vì
-    # trả thẳng về "khac" khi OCR không có kết quả.
     if any(c in filename_unaccented for c in ("vietcombank", "vcb", "digibank")):
-        scores['anh_chuyen_khoan'] += 20
+        scores['bank_transfer'] += 20
 
-    # Các nhãn thực tế thường xuất hiện trong biên nhận chuyển khoản.
     transfer_label_pairs = [
         ("TAI KHOAN NHAN", "NGAN HANG NHAN"),
         ("SO TAI KHOAN NHAN", "TEN NGUOI NHAN"),
@@ -204,29 +199,29 @@ def classify_document(file_path: str) -> tuple[str, float]:
     ]
     for left, right in transfer_label_pairs:
         if left in full_text_unaccented and right in full_text_unaccented:
-            scores['anh_chuyen_khoan'] += 25
+            scores['bank_transfer'] += 25
 
-    if ("SO TIEN" in full_text_unaccented or "TAI KHOAN" in full_text_unaccented) and \
-       ("THANH CONG" in full_text_unaccented or "NGAN HANG" in full_text_unaccented or "VIETCOMBANK" in full_text_unaccented):
-        scores['anh_chuyen_khoan'] += 40
+    if ("SO TIEN" in full_text_unaccented or "TAI KHOAN" in full_text_unaccented or "CHUYEN TIEN" in full_text_unaccented or "CHUYEN" in full_text_unaccented) and \
+       ("THANH CONG" in full_text_unaccented or "NGAN HANG" in full_text_unaccented or "VIETCOMBANK" in full_text_unaccented or "TECHCOMBANK" in full_text_unaccented or "BOI MB" in full_text_unaccented or "MB" in header_unaccented):
+        scores['bank_transfer'] += 45
 
     # 2. KIỂM TRA HỢP ĐỒNG (CONTRACT)
     contract_header_keywords = [
-        "HOP DONG", "CONG HOA XA HOI CHU NGHIA VIET NAM", "BIEN BAN GIAO NHAN",
-        "CONTRACT", "AGREEMENT", "BEN A", "BEN B"
+        "HOP DONG", "CONG HOA XA HOI CHU NGHIA VIET NAM",
+        "CONTRACT", "AGREEMENT", "BEN A", "BEN B", "PHU LUC HOP DONG"
     ]
     for kw in contract_header_keywords:
         if kw in header_unaccented:
-            scores['hop_dong'] += 40
+            scores['contract'] += 40
         elif kw in full_text_unaccented:
-            scores['hop_dong'] += 20
+            scores['contract'] += 20
 
     fn_contract_clues = ["hop_dong", "hopdong", "hdmb", "hđ", "hd", "contract", "agreement"]
     if any(c in filename_unaccented.split() or c in filename_unaccented for c in fn_contract_clues):
-        scores['hop_dong'] += 35
+        scores['contract'] += 35
 
     if re.search(r'DIEU\s+\d+', full_text_unaccented) or re.search(r'ĐIỀU\s+\d+', full_text_upper):
-        scores['hop_dong'] += 25
+        scores['contract'] += 25
 
     # 3. KIỂM TRA HÓA ĐƠN (INVOICE)
     # Loại bỏ ngữ cảnh viện dẫn luật ("Luật Thuế giá trị gia tăng", "về hóa đơn, chứng từ")
@@ -239,48 +234,52 @@ def classify_document(file_path: str) -> tuple[str, float]:
     ]
     for kw in invoice_keywords:
         if kw in clean_header_for_invoice:
-            scores['hoa_don'] += 45
+            scores['invoice'] += 45
         elif kw in full_text_unaccented and kw not in ("HOA DON", "GIA TRI GIA TANG"):
-            scores['hoa_don'] += 20
+            scores['invoice'] += 20
 
     fn_invoice_clues = ["hoadon", "hoa_don", "invoice", "vat", "bill"]
     if any(c in filename_unaccented for c in fn_invoice_clues):
-        scores['hoa_don'] += 35
+        scores['invoice'] += 35
 
-    # 4. KIỂM TRA CHỨNG TỪ / ĐƠN HÀNG / BÁO CÁO (VOUCHER / ORDER / REPORT)
+    # 4. KIỂM TRA PHIẾU XUẤT/NHẬP KHO & BIÊN BẢN GIAO NHẬN (WAREHOUSE_VOUCHER)
     voucher_keywords = [
-        "DON DAT HANG", "DON HANG", "CHUNG TU", "PHIEU XUAT KHO", "PHIEU NHAP KHO",
-        "PHIEU THU", "PHIEU CHI", "SALES ORDER", "PURCHASE ORDER", "BAO CAO",
-        "MA HD", "DOANH THU", "SO TIEN", "KHACH HANG", "STT"
+        "PHIEU XUAT KHO", "PHIEU NHAP KHO", "BIEN BAN GIAO NHAN", "BIEN BAN BAN GIAO",
+        "BIEN BAN NGHIEM THU", "XUAT KHO", "NHAP KHO", "GIAO NHAN HANG HOA",
+        "WAREHOUSE ISSUE NOTE", "GOODS RECEIPT", "DELIVERY NOTE", "DELIVERY ORDER",
+        "TAI KHOAN NO", "TAI KHOAN CO", "SO LUONG THEO CHUNG TU", "SO LUONG THUC XUAT",
+        "SO LUONG THUC NHAP"
     ]
     for kw in voucher_keywords:
         if kw in header_unaccented:
-            scores['chung_tu'] += 35
+            scores['warehouse_voucher'] += 45
         elif kw in full_text_unaccented:
-            scores['chung_tu'] += 15
+            scores['warehouse_voucher'] += 20
 
-    fn_voucher_clues = ["so-", "chung_tu", "chungtu", "don_hang", "order", "excel", "report", "pxk", "pnk"]
+    fn_voucher_clues = ["pxk", "pnk", "xuat_kho", "nhap_kho", "giao_nhan", "phieu_kho", "warehouse", "delivery"]
     if any(c in filename_unaccented for c in fn_voucher_clues):
-        scores['chung_tu'] += 35
+        scores['warehouse_voucher'] += 35
 
-    # Đuôi file đặc thù (Excel thường là chứng từ / báo cáo doanh thu / bảng kê)
-    if filename.endswith('.xlsx') or filename.endswith('.xls'):
-        scores['chung_tu'] += 20
+    # Đuôi file đặc thù (Excel dạng phiếu/bảng kê xuất nhập kho)
+    if (filename.endswith('.xlsx') or filename.endswith('.xls')) and ("KHO" in full_text_unaccented or "XUAT" in full_text_unaccented):
+        scores['warehouse_voucher'] += 25
 
     # Tìm danh mục có điểm cao nhất
     best_cat = max(scores, key=scores.get)
     best_score = scores[best_cat]
 
-    # Nếu không có điểm nào hoặc điểm quá thấp (< 15)
-    if best_score < 15:
-        # Fallback 1: Thử xem có chữ "HOP" + "DONG" / "HOA" + "DON" / "CHUNG" + "TU"
-        if "HOP" in full_text_unaccented and "DONG" in full_text_unaccented:
-            return ("hop_dong", 70.0)
-        if "HOA" in full_text_unaccented and "DON" in full_text_unaccented:
-            return ("hoa_don", 70.0)
-        if "CHUNG" in full_text_unaccented and "TU" in full_text_unaccented:
-            return ("chung_tu", 70.0)
-        return ("khac", 0.0)
+    # Nếu không có điểm nào hoặc điểm quá thấp (< 20) -> 'other'
+    if best_score < 20:
+        # Fallback 1: Kiểm tra từ khóa rõ ràng
+        if "HOP DONG" in full_text_unaccented or "CONTRACT" in full_text_unaccented:
+            return ("contract", 70.0)
+        if "HOA DON" in full_text_unaccented or "INVOICE" in full_text_unaccented:
+            return ("invoice", 70.0)
+        if any(w in full_text_unaccented for w in ["PHIEU XUAT KHO", "PHIEU NHAP KHO", "BIEN BAN GIAO NHAN"]):
+            return ("warehouse_voucher", 70.0)
+        if any(w in full_text_unaccented for w in ["CHUYEN KHOAN", "GIAO DICH THANH CONG"]):
+            return ("bank_transfer", 70.0)
+        return ("other", 0.0)
 
     # Tính phần trăm độ tin cậy dựa trên điểm số (tối đa 99.0%)
     confidence = min(99.0, round(50.0 + (best_score * 0.8), 1))
@@ -289,32 +288,43 @@ def classify_document(file_path: str) -> tuple[str, float]:
 
 def get_classification_metadata(file_path: str, doc_result: dict = None) -> dict:
     """
-    Trả về metadata phân loại hoàn chỉnh dạng dictionary tuân thủ chuẩn hệ thống.
+    Trả về metadata phân loại hoàn chỉnh dạng dictionary tuân thủ chuẩn 5 nhóm hệ thống:
+    - invoice
+    - contract
+    - bank_transfer
+    - warehouse_voucher
+    - other
     """
     cat_code, conf = classify_document(file_path)
 
-    type_mapping = {
+    # Đảm bảo ánh xạ chuẩn
+    canonical_types = {
+        "contract": "contract",
         "hop_dong": "contract",
+        "invoice": "invoice",
         "hoa_don": "invoice",
-        "chung_tu": "voucher",
+        "warehouse_voucher": "warehouse_voucher",
+        "chung_tu": "warehouse_voucher",
+        "bank_transfer": "bank_transfer",
         "anh_chuyen_khoan": "bank_transfer",
-        "khac": "unknown"
+        "other": "other",
+        "khac": "other"
     }
 
-    doc_type = type_mapping.get(cat_code, "unknown")
+    doc_type = canonical_types.get(cat_code, "other")
 
     reasons = {
         "contract": "Tài liệu chứa các dấu hiệu đặc trưng hợp đồng như tiêu đề Hợp đồng, điều khoản, bên A, bên B, chữ ký.",
         "invoice": "Tài liệu chứa các trường đặc trưng hóa đơn như số hóa đơn, ký hiệu, ngày lập, thông tin người bán, người mua, thuế VAT.",
-        "voucher": "Tài liệu chứa các trường chứng từ như loại chứng từ, đơn vị phát hành, số tiền, ngày chứng từ.",
+        "warehouse_voucher": "Tài liệu chứa các trường phiếu kho/biên bản giao nhận hàng hóa (loại phiếu, kho, số lượng yêu cầu/thực tế).",
         "bank_transfer": "Tài liệu là biên nhận/ảnh chuyển khoản ngân hàng chứa mã giao dịch, số tài khoản, số tiền, nội dung chuyển.",
-        "unknown": "Bằng chứng từ văn bản chưa đủ căn cứ để gán loại tài liệu cụ thể."
+        "other": "Bằng chứng từ văn bản chưa đủ căn cứ để gán loại tài liệu cụ thể (hoặc tài liệu không thuộc 4 nhóm chính)."
     }
 
     return {
         "document_type": doc_type,
-        "category": cat_code,
-        "confidence": round(conf / 100.0, 2) if conf > 0 else 0.42,
+        "category": doc_type,
+        "confidence": round(conf / 100.0, 2) if conf > 0 else 0.40,
         "reason": reasons.get(doc_type, "")
     }
 

@@ -1,7 +1,7 @@
 @echo off
 title AI Document Chatbox System
 
-echo   Starting AI Document Chatbox System (Clean Architecture)
+echo Starting AI Document Chatbox System (Clean Architecture)
 
 start "AI Chatbox - Backend" cmd /k "cd /d "%~dp0backend" && set "PYTHONPATH=%~dp0;%~dp0backend" && python main.py"
 

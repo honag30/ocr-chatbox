@@ -9,14 +9,26 @@ from voucher_extractor import VoucherExtractor
 from bank_transfer_extractor import BankTransferExtractor
 from generic_extractor import GenericExtractor
 
+try:
+    from backend.config import key_manager
+except ImportError:
+    try:
+        from config import key_manager
+    except ImportError:
+        try:
+            from backend.services.key_rotator import KeyManager
+        except ImportError:
+            from services.key_rotator import KeyManager
+        key_manager = KeyManager()
+
 class LLMExtractor:
     """
     Tích hợp Gemini 2.5 Flash API để phân tích Document Understanding & Structured Extraction.
-    Hỗ trợ tự động fallback sang Rule-based Extractors khi không có API Key hoặc gặp sự cố mạng.
+    Hỗ trợ cơ chế xoay vòng key tự động và tự động fallback sang Rule-based Extractors.
     """
 
     def __init__(self):
-        self.api_key = os.getenv("GEMINI_API_KEY", "")
+        self.key_manager = key_manager
         self.contract_ext = ContractExtractor()
         self.invoice_ext = InvoiceExtractor()
         self.voucher_ext = VoucherExtractor()
@@ -28,8 +40,8 @@ class LLMExtractor:
         Trực tiếp trích xuất dữ liệu cấu trúc dựa theo document_type.
         Trả về tuple: (structured_data, metadata)
         """
-        # Nếu có API KEY -> Thử gọi Gemini 2.5 Flash
-        if self.api_key:
+        # Nếu có API KEY khả dụng -> Thử gọi Gemini 2.5 Flash
+        if self.key_manager.has_available_keys():
             try:
                 llm_result, meta = self._call_gemini_flash(doc_result, document_type)
                 if llm_result:
@@ -90,17 +102,17 @@ DỮ LIỆU BẢNG (NẾU CÓ):
 Hãy trả về kết quả dưới dạng JSON duy nhất đúng theo schema của {document_type}.
 """
 
-        try:
+        def _do_call(api_key: str) -> str:
             # Ưu tiên import google.genai hoặc google.generativeai
             try:
                 import google.generativeai as genai
-                genai.configure(api_key=self.api_key)
+                genai.configure(api_key=api_key)
                 model = genai.GenerativeModel('gemini-2.5-flash')
                 response = model.generate_content(prompt)
-                text_resp = response.text
+                return response.text
             except ImportError:
                 import urllib.request
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.api_key}"
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
                 payload = {
                     "contents": [{"parts": [{"text": prompt}]}]
                 }
@@ -111,7 +123,10 @@ Hãy trả về kết quả dưới dạng JSON duy nhất đúng theo schema c�
                 )
                 with urllib.request.urlopen(req, timeout=15) as resp:
                     res_json = json.loads(resp.read().decode('utf-8'))
-                    text_resp = res_json['candidates'][0]['content']['parts'][0]['text']
+                    return res_json['candidates'][0]['content']['parts'][0]['text']
+
+        try:
+            text_resp = self.key_manager.execute_with_retry(_do_call)
 
             # Clean json output from markdown standard
             clean_json_str = text_resp.replace("```json", "").replace("```", "").strip()

@@ -12,21 +12,39 @@ def log_debug(msg: str):
         print(f"[DEBUG_TABLE] {msg}")
 
 def parse_number(text: str) -> float | None:
-    """Trích xuất giá trị số hợp lệ đầu tiên từ chuỗi text (xử lý an toàn chuỗi nhiều dòng)."""
+    """Trích xuất giá trị số hợp lệ đầu tiên từ chuỗi text (hỗ trợ cả chuẩn Việt Nam và Quốc tế)."""
     if not text:
         return None
     lines = [l.strip() for l in text.split('\n') if l.strip()]
     for line in lines:
         if re.match(r'^\(\d\)', line) or "=" in line or "%" in line:
             continue
-        cleaned = re.sub(r'[^\d\.\,-]', '', line).replace(',', '')
         try:
-            val = float(cleaned)
+            from normalizer import normalize_financial_number
+            val = normalize_financial_number(line)
+        except Exception:
+            try:
+                from core_ocr.normalizer import normalize_financial_number
+                val = normalize_financial_number(line)
+            except Exception:
+                val = None
+
+        if val is None:
+            cleaned = re.sub(r'[^\d\.\,-]', '', line)
+            if cleaned:
+                if ',' in cleaned and len(cleaned.split(',')[-1]) in (1, 2):
+                    cleaned = cleaned.replace('.', '').replace(',', '.')
+                else:
+                    cleaned = cleaned.replace(',', '')
+                try:
+                    val = float(cleaned)
+                except ValueError:
+                    val = None
+
+        if val is not None:
             if val in [1.0, 2.0, 3.0, 4.0, 5.0] and len(line) <= 3:
                 continue
             return val
-        except ValueError:
-            continue
     return None
 
 def validate_table_financials(matrix: list[list[str]]) -> dict:
@@ -196,13 +214,23 @@ def extract_table_from_raw_results(raw_results, image=None, y_tolerance=18, x_to
         except Exception:
             grid_cells = None
 
+    # Tính toán dung sai động dựa trên kích thước trung vị của bounding boxes
+    box_heights = [b['height'] for b in ocr_boxes if b.get('height', 0) > 0]
+    box_widths = [b['width'] for b in ocr_boxes if b.get('width', 0) > 0]
+    median_h = float(np.median(box_heights)) if box_heights else 18.0
+    median_w = float(np.median(box_widths)) if box_widths else 45.0
+
+    actual_y_tol = max(10.0, min(35.0, median_h * 0.75)) if y_tolerance == 18 else y_tolerance
+    actual_x_tol = max(18.0, min(50.0, median_w * 0.60)) if x_tolerance == 25 else x_tolerance
+    dyn_col_merge = max(30.0, min(90.0, median_w * 0.90))
+
     if grid_cells and len(grid_cells) >= 4:
         grid_cells.sort(key=lambda c: c['y'])
         rows = []
         for cell in grid_cells:
             assigned = False
             for r in rows:
-                if abs(cell['y'] - r[0]['y']) <= y_tolerance:
+                if abs(cell['y'] - r[0]['y']) <= actual_y_tol:
                     r.append(cell)
                     assigned = True
                     break
@@ -225,7 +253,7 @@ def extract_table_from_raw_results(raw_results, image=None, y_tolerance=18, x_to
                 if not col_clusters:
                     col_clusters.append([x])
                 else:
-                    if abs(x - sum(col_clusters[-1])/len(col_clusters[-1])) <= x_tolerance:
+                    if abs(x - sum(col_clusters[-1])/len(col_clusters[-1])) <= actual_x_tol:
                         col_clusters[-1].append(x)
                     else:
                         col_clusters.append([x])
@@ -293,7 +321,7 @@ def extract_table_from_raw_results(raw_results, image=None, y_tolerance=18, x_to
         if not lines:
             lines.append([box])
         else:
-            if abs(box['y_center'] - lines[-1][0]['y_center']) <= y_tolerance:
+            if abs(box['y_center'] - lines[-1][0]['y_center']) <= actual_y_tol:
                 lines[-1].append(box)
             else:
                 lines.append([box])
@@ -315,7 +343,7 @@ def extract_table_from_raw_results(raw_results, image=None, y_tolerance=18, x_to
             cols.append([x])
         else:
             avg_x = sum(cols[-1]) / len(cols[-1])
-            if abs(x - avg_x) <= 60:
+            if abs(x - avg_x) <= dyn_col_merge:
                 cols[-1].append(x)
             else:
                 cols.append([x])
@@ -325,7 +353,7 @@ def extract_table_from_raw_results(raw_results, image=None, y_tolerance=18, x_to
 
     col_bounds = []
     for c in cols:
-        col_bounds.append((min(c) - 15, max(c) + 60))
+        col_bounds.append((min(c) - max(10.0, dyn_col_merge * 0.25), max(c) + dyn_col_merge))
 
     matrix = []
     cell_details = []
@@ -382,10 +410,48 @@ def extract_table_from_raw_results(raw_results, image=None, y_tolerance=18, x_to
 
 def extract_native_pdf_tables_from_page(page, page_num: int) -> list[dict]:
     """
-    Trích xuất Bảng chính xác từ Native PDF Page theo phân cấp:
-    words -> lines -> blocks -> candidate regions -> rows/cols -> cells -> matrix.
+    Trích xuất Bảng chính xác từ Native PDF Page:
+    1. Ưu tiên PyMuPDF TableFinder engine (page.find_tables).
+    2. Fallback sang Geometric Layout Parsing: words -> lines -> blocks -> candidate regions -> rows/cols -> cells -> matrix.
     Hỗ trợ gom multiline cells, không lọt paragraph và có validation.
     """
+    # Chiến lược 1: Thử nghiệm PyMuPDF TableFinder (PyMuPDF 1.23+)
+    try:
+        if hasattr(page, "find_tables"):
+            tabs = page.find_tables()
+            if tabs and len(tabs.tables) > 0:
+                extracted_native_tables = []
+                for t_idx, tab in enumerate(tabs.tables):
+                    raw_matrix = tab.extract()
+                    if raw_matrix and len(raw_matrix) >= 2:
+                        cleaned_matrix = []
+                        for r in raw_matrix:
+                            cleaned_matrix.append([str(c or '').strip() for c in r])
+                        filtered_matrix = [r for r in cleaned_matrix if any(c for c in r)]
+                        if len(filtered_matrix) >= 2 and max(len(r) for r in filtered_matrix) >= 2:
+                            val_res = validate_table_financials(filtered_matrix)
+                            headers = [h.replace("\n", " ") for h in filtered_matrix[0]]
+                            extracted_native_tables.append({
+                                "page_number": page_num,
+                                "table_index": t_idx + 1,
+                                "bbox": [float(x) for x in tab.bbox],
+                                "num_rows": len(filtered_matrix),
+                                "num_columns": len(filtered_matrix[0]),
+                                "confidence": 0.98 if val_res["status"] == "pass" else 0.92,
+                                "table_confidence": 0.98 if val_res["status"] == "pass" else 0.92,
+                                "headers": headers,
+                                "columns": [{"index": i, "name": h} for i, h in enumerate(headers)],
+                                "rows": [{"row_index": r_i, "cells": [{"column_index": c_i, "text": cell} for c_i, cell in enumerate(r)]} for r_i, r in enumerate(filtered_matrix)],
+                                "matrix": filtered_matrix,
+                                "markdown": format_table_to_markdown(filtered_matrix),
+                                "validation": val_res
+                            })
+                if extracted_native_tables:
+                    return extracted_native_tables
+    except Exception as e:
+        log_debug(f"find_tables fallback: {e}")
+
+    # Chiến lược 2: Geometric Coordinate Layout Parsing
     text_dict = page.get_text("dict")
     page_w = text_dict["width"]
     page_h = text_dict["height"]

@@ -295,3 +295,134 @@ def clear_session_messages(session_id):
     except Exception as e:
         logger.error(f"Lỗi khi xóa tin nhắn của session: {e}")
         return False
+
+
+# ---------------------------------------------------------
+# EVIDENCE EXTRACTION ENGINE REPOSITORIES
+# ---------------------------------------------------------
+
+def save_evidence_package(package_dict: dict) -> bool:
+    """Lưu hoặc cập nhật Evidence Package vào bảng evidence_packages."""
+    pkg_id = package_dict.get("evidence_package_id")
+    doc_id = package_dict.get("document", {}).get("document_id")
+    art_id = package_dict.get("document", {}).get("artifact_id")
+    doc_type = package_dict.get("document", {}).get("document_type", "UNKNOWN")
+
+    trust = package_dict.get("trust", {})
+    verif_status = trust.get("verification_status", "UNVERIFIED")
+    pub_status = trust.get("publish_status", "PENDING")
+    overall_conf = trust.get("confidence", {}).get("overall", 0.0)
+    rev_req = 1 if trust.get("review_required") else 0
+
+    payload_json = json.dumps(package_dict, ensure_ascii=False)
+
+    sql = """
+    INSERT INTO evidence_packages 
+        (evidence_package_id, document_id, artifact_id, document_type, verification_status, publish_status, overall_confidence, review_required, payload_json)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+    ON DUPLICATE KEY UPDATE
+        document_type = VALUES(document_type),
+        verification_status = VALUES(verification_status),
+        publish_status = VALUES(publish_status),
+        overall_confidence = VALUES(overall_confidence),
+        review_required = VALUES(review_required),
+        payload_json = VALUES(payload_json),
+        updated_at = CURRENT_TIMESTAMP;
+    """
+    try:
+        conn = get_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(sql, (pkg_id, doc_id, art_id, doc_type, verif_status, pub_status, overall_conf, rev_req, payload_json))
+
+            # Also save document relationships if present
+            rels = package_dict.get("document_relationships", [])
+            for r in rels:
+                from_id = r.get("from") or r.get("from_document_id")
+                rel_type = r.get("relationship")
+                to_id = r.get("to") or r.get("to_document_id")
+                conf = r.get("confidence", 0.95)
+                if from_id and to_id and rel_type:
+                    cursor.execute(
+                        "INSERT INTO document_relationships (from_document_id, relationship, to_document_id, confidence) VALUES (%s, %s, %s, %s)",
+                        (from_id, rel_type, to_id, conf)
+                    )
+
+        conn.close()
+        return True
+    except Exception as e:
+        logger.error(f"Lỗi khi lưu evidence_package: {e}")
+        return False
+
+
+def get_evidence_package_by_id(pkg_id: str) -> Optional[dict]:
+    """Lấy Evidence Package theo ID."""
+    sql = "SELECT * FROM evidence_packages WHERE evidence_package_id = %s LIMIT 1;"
+    try:
+        conn = get_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(sql, (pkg_id,))
+            row = cursor.fetchone()
+        conn.close()
+        if row and row.get("payload_json"):
+            try:
+                return json.loads(row["payload_json"])
+            except Exception:
+                pass
+        return None
+    except Exception as e:
+        logger.error(f"Lỗi khi đọc evidence_package theo ID: {e}")
+        return None
+
+
+def update_evidence_verification_status(pkg_id: str, status: str, notes: str = None) -> bool:
+    """Cập nhật trạng thái thẩm định (VERIFIED / REJECTED / REVIEW_REQUIRED)."""
+    try:
+        pkg = get_evidence_package_by_id(pkg_id)
+        if not pkg:
+            return False
+
+        pkg["trust"]["verification_status"] = status
+        if status == "VERIFIED":
+            pkg["trust"]["review_required"] = False
+            pkg["trust"]["publish_status"] = "ELIGIBLE"
+        elif status == "REJECTED":
+            pkg["trust"]["review_required"] = False
+            pkg["trust"]["publish_status"] = "BLOCKED"
+
+        if notes:
+            pkg["trust"]["review_notes"] = notes
+
+        return save_evidence_package(pkg)
+    except Exception as e:
+        logger.error(f"Lỗi khi cập nhật verification_status: {e}")
+        return False
+
+
+def update_evidence_publish_status(pkg_id: str, status: str) -> bool:
+    """Cập nhật trạng thái xuất bản dữ liệu sang DataHub (PENDING / ELIGIBLE / PUBLISHED / BLOCKED)."""
+    try:
+        pkg = get_evidence_package_by_id(pkg_id)
+        if not pkg:
+            return False
+
+        pkg["trust"]["publish_status"] = status
+        return save_evidence_package(pkg)
+    except Exception as e:
+        logger.error(f"Lỗi khi cập nhật publish_status: {e}")
+        return False
+
+
+def get_all_document_relationships() -> list:
+    """Lấy toàn bộ đồ thị mối quan hệ giữa các tài liệu (Document Graph)."""
+    sql = "SELECT from_document_id AS `from`, relationship, to_document_id AS `to`, confidence FROM document_relationships ORDER BY id DESC LIMIT 200;"
+    try:
+        conn = get_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(sql)
+            rows = cursor.fetchall()
+        conn.close()
+        return rows
+    except Exception as e:
+        logger.error(f"Lỗi khi đọc document_relationships: {e}")
+        return []
+

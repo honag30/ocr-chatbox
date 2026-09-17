@@ -92,7 +92,7 @@ export default function InputBar({ onSendMessage, onFileUpload, isLoading, isUpl
             title="Gửi câu hỏi"
           >
             {isLoading || isUploading ? (
-              <Loader2 size={18} className="animate-spin" style={{ animation: 'bounce 1s infinite' }} />
+              <Loader2 size={18} className="animate-spin" />
             ) : (
               <Send size={16} />
             )}

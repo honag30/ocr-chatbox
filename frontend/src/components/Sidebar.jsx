@@ -10,7 +10,8 @@ import {
   FolderOpen,
   Plus,
   Layers,
-  FileText
+  FileText,
+  ShieldCheck
 } from 'lucide-react';
 
 export default function Sidebar({ 
@@ -93,21 +94,29 @@ export default function Sidebar({
         </div>
       </div>
 
-      {/* 2 Tabs Header */}
+      {/* 3 Tabs Header */}
       <div className="sidebar-tabs">
         <button 
           className={`sidebar-tab-btn ${activeTab === 'history' ? 'active' : ''}`}
           onClick={() => onTabChange('history')}
         >
-          <MessageSquare size={15} />
-          <span>Lịch sử chat</span>
+          <MessageSquare size={14} />
+          <span>Chat</span>
         </button>
         <button 
           className={`sidebar-tab-btn ${activeTab === 'files' ? 'active' : ''}`}
           onClick={() => onTabChange('files')}
         >
-          <FolderOpen size={15} />
-          <span>Danh sách file ({filesList.length})</span>
+          <FolderOpen size={14} />
+          <span>Files</span>
+        </button>
+        <button 
+          className={`sidebar-tab-btn ${activeTab === 'evidence' ? 'active' : ''}`}
+          onClick={() => onTabChange('evidence')}
+          style={{ position: 'relative' }}
+        >
+          <ShieldCheck size={14} color="var(--accent-emerald, #10b981)" />
+          <span>Evidence Engine</span>
         </button>
       </div>
 
@@ -211,9 +220,9 @@ export default function Sidebar({
                 filesList.map((file, idx) => (
                   <div 
                     key={idx} 
-                    className={`file-item ${activeDoc?.original_filename === file.name ? 'active' : ''}`}
+                    className={`file-item ${activeDoc?.original_filename === file.name || activeDoc?.file_path === file.path ? 'active' : ''}`}
                     onClick={() => onSelectFile(file.path)}
-                    title={`Click để tóm tắt: ${file.name}`}
+                    title={activeTab === 'evidence' ? `Click để bóc tách Evidence: ${file.name}` : `Click để tóm tắt Chat: ${file.name}`}
                   >
                     <div className="file-info">
                       {getFileBadge(file.extension)}

@@ -1,21 +1,28 @@
+from typing import Dict, Optional
 from openai import OpenAI
 try:
-    from config import GEMINI_API_KEY, MODEL_NAME
+    from config import key_manager, MODEL_NAME
 except ImportError:
-    from backend.config import GEMINI_API_KEY, MODEL_NAME
+    from backend.config import key_manager, MODEL_NAME
 
 
 class AIService:
 
     def __init__(self):
-        # Sử dụng Google Gemini thông qua OpenAI Compatibility endpoint
-        self.client = OpenAI(
-            api_key=GEMINI_API_KEY,
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
-        )
+        # Cache các OpenAI client theo từng API key để tối ưu tài nguyên
+        self._clients: Dict[str, OpenAI] = {}
+
+    def _get_client(self, api_key: str) -> OpenAI:
+        """Lấy hoặc khởi tạo OpenAI client tương ứng với API key."""
+        if api_key not in self._clients:
+            self._clients[api_key] = OpenAI(
+                api_key=api_key,
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+            )
+        return self._clients[api_key]
 
     def chat(self, messages, system_instruction=None):
-        """Gửi hội thoại tới Gemini API và nhận phản hồi."""
+        """Gửi hội thoại tới Gemini API và nhận phản hồi với cơ chế xoay vòng key tự động."""
         system_content = system_instruction or (
             "Bạn là trợ lý AI thông minh chuyên nghiệp. "
             "Bạn có khả năng phân tích, tóm tắt tài liệu (PDF, Word, Excel, Ảnh, Hợp đồng, Hóa đơn, Chứng từ) "
@@ -27,12 +34,15 @@ class AIService:
             *messages
         ]
 
-        response = self.client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=full_messages,
-        )
+        def _do_chat(api_key: str):
+            client = self._get_client(api_key)
+            response = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=full_messages,
+            )
+            return response.choices[0].message.content
 
-        return response.choices[0].message.content
+        return key_manager.execute_with_retry(_do_chat)
 
     def summarize_document(self, doc_context: str, user_instruction: str = None) -> str:
         """Tạo bản tóm tắt chi tiết, có cấu trúc từ nội dung và bảng biểu của tài liệu đã trích xuất."""
@@ -57,18 +67,21 @@ class AIService:
             "Lưu ý: Trình bày đẹp mắt, dùng bullet points, in đậm các từ khóa/số liệu quan trọng để người đọc nắm bắt nhanh nhất."
         )
 
-        response = self.client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Bạn là chuyên gia phân tích và tóm tắt tài liệu doanh nghiệp, pháp lý, kế toán và hành chính. "
-                        "Bạn luôn đưa ra bản tóm tắt súc tích, chính xác theo đúng sự thật trong tài liệu, không bịa đặt số liệu."
-                    )
-                },
-                {"role": "user", "content": prompt}
-            ],
-        )
+        def _do_summarize(api_key: str):
+            client = self._get_client(api_key)
+            response = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Bạn là chuyên gia phân tích và tóm tắt tài liệu doanh nghiệp, pháp lý, kế toán và hành chính. "
+                            "Bạn luôn đưa ra bản tóm tắt súc tích, chính xác theo đúng sự thật trong tài liệu, không bịa đặt số liệu."
+                        )
+                    },
+                    {"role": "user", "content": prompt}
+                ],
+            )
+            return response.choices[0].message.content
 
-        return response.choices[0].message.content
+        return key_manager.execute_with_retry(_do_summarize)

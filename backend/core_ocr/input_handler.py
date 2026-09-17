@@ -44,8 +44,8 @@ _OCR_PARAMS_CPU = {
     "paragraph": False,        # tắt paragraph mode để giữ nguyên cấu trúc dòng
 }
 
-# DPI render PDF scan — 150 là đủ cho EasyOCR, giảm pixel ~43% so với 200
-_PDF_SCAN_DPI = 150
+# DPI render PDF scan — 200 DPI tối ưu độ sắc nét cho bảng biểu số liệu font nhỏ & dấu chấm/phẩy
+_PDF_SCAN_DPI = 200
 
 
 def classify_text_element(line: str) -> dict:
