@@ -45,13 +45,35 @@ def get_ocr_document_by_id(doc_id):
         return None
 
 
+def get_ocr_document_by_name(file_name):
+    """Lấy chi tiết tài liệu theo tên file."""
+    if not file_name:
+        return None
+    sql = "SELECT * FROM ocr_documents WHERE file_name = %s ORDER BY id DESC LIMIT 1;"
+    try:
+        conn = get_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(sql, (file_name,))
+            row = cursor.fetchone()
+        conn.close()
+        if row and row.get("ocr_data_json"):
+            try:
+                row["ocr_data_json"] = json.loads(row["ocr_data_json"])
+            except Exception:
+                pass
+        return row
+    except Exception as e:
+        logger.error(f"Lỗi khi lấy ocr_document theo file_name: {e}")
+        return None
+
+
 def get_all_ocr_documents(category=None, limit=100):
     """Lấy danh sách các tài liệu đã OCR."""
     if category:
-        sql = "SELECT id, file_name, file_type, category, status, created_at FROM ocr_documents WHERE category = %s ORDER BY id DESC LIMIT %s;"
+        sql = "SELECT id, file_name, file_type, file_size, category, status, created_at FROM ocr_documents WHERE category = %s ORDER BY id DESC LIMIT %s;"
         params = (category, limit)
     else:
-        sql = "SELECT id, file_name, file_type, category, status, created_at FROM ocr_documents ORDER BY id DESC LIMIT %s;"
+        sql = "SELECT id, file_name, file_type, file_size, category, status, created_at FROM ocr_documents ORDER BY id DESC LIMIT %s;"
         params = (limit,)
 
     try:

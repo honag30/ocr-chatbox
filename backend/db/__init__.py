@@ -3,6 +3,7 @@ from .models import init_db, calculate_file_sha256
 from .repositories import (
     save_ocr_document,
     get_ocr_document_by_id,
+    get_ocr_document_by_name,
     get_ocr_document_by_hash,
     get_all_ocr_documents,
     cleanup_duplicate_documents,

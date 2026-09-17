@@ -1,15 +1,22 @@
 def build_invoice_summary(invoice_data: dict, doc_result: dict) -> dict:
     """
-    Sinh document_summary chuyên biệt cho Hóa đơn.
+    Sinh document_summary chuyên biệt cho Hóa đơn (hỗ trợ cả schema sạch lẫn legacy).
     """
-    inv_info = invoice_data.get("invoice", {})
-    no = inv_info.get("invoice_number", "")
-    symbol = inv_info.get("invoice_symbol", "")
-    date = inv_info.get("invoice_date", "")
+    inv_info = invoice_data.get("data") or invoice_data.get("invoice") or invoice_data
+    no = inv_info.get("so_hoa_don") or inv_info.get("invoice_number", "")
+    symbol = inv_info.get("ky_hieu") or inv_info.get("invoice_symbol", "")
+    date = inv_info.get("ngay_hoa_don") or inv_info.get("invoice_date", "")
 
-    seller = inv_info.get("seller", {}).get("name", "")
-    buyer = inv_info.get("buyer", {}).get("name", "")
-    total = inv_info.get("amounts", {}).get("total")
+    seller_obj = inv_info.get("ben_ban") or inv_info.get("seller", {})
+    seller = seller_obj.get("ten") or seller_obj.get("name", "")
+    seller_mst = seller_obj.get("mst") or seller_obj.get("tax_id", "")
+
+    buyer_obj = inv_info.get("ben_mua") or inv_info.get("buyer", {})
+    buyer = buyer_obj.get("ten") or buyer_obj.get("name", "")
+    buyer_mst = buyer_obj.get("mst") or buyer_obj.get("tax_id", "")
+
+    fin_obj = inv_info.get("tai_chinh") or inv_info.get("amounts", {})
+    total = fin_obj.get("tong_tien_thanh_toan") or fin_obj.get("total")
 
     short_summary = f"Hóa đơn GTGT/Bán hàng số {no}" if no else "Hóa đơn"
     if symbol:
@@ -41,9 +48,9 @@ def build_invoice_summary(invoice_data: dict, doc_result: dict) -> dict:
 
     parties = []
     if seller:
-        parties.append({"role": "Người bán", "name": seller, "tax_id": inv_info.get("seller", {}).get("tax_id", "")})
+        parties.append({"role": "Người bán", "name": seller, "tax_id": seller_mst})
     if buyer:
-        parties.append({"role": "Người mua", "name": buyer, "tax_id": inv_info.get("buyer", {}).get("tax_id", "")})
+        parties.append({"role": "Người mua", "name": buyer, "tax_id": buyer_mst})
 
     return {
         "short_summary": short_summary,

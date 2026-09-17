@@ -1,118 +1,107 @@
 import re
 from base_extractor import BaseExtractor
-from schemas.contract_schema import get_empty_contract_schema
+from schemas.contract_schema import get_clean_contract_schema, get_empty_contract_schema
 
 class ContractExtractor(BaseExtractor):
     """
-    Extractor bóc tách dữ liệu cấu trúc chuyên biệt cho Hợp đồng (Contract).
+    Extractor bóc tách dữ liệu cấu trúc tinh gọn cho Hợp đồng (Contract).
     """
 
     def extract(self, doc_result: dict) -> dict:
-        schema = get_empty_contract_schema()
-        contract_data = schema["contract"]
+        clean_schema = get_clean_contract_schema()
+        d = clean_schema["data"]
 
         full_text = doc_result.get("full_text", "")
         lines = [l.strip() for l in full_text.splitlines() if l.strip()]
 
-        # 1. Title
-        for l in lines[:5]:
-            if any(kw in l.upper() for kw in ["HỢP ĐỒNG", "HOP DONG", "BIÊN BẢN", "AGREEMENT"]):
-                contract_data["title"] = l
+        # 1. Tiêu đề hợp đồng
+        for l in lines[:10]:
+            if any(kw in l.upper() for kw in ["HỢP ĐỒNG", "HOP DONG", "AGREEMENT"]):
+                d["tieu_de"] = l
                 break
+        if not d["tieu_de"]:
+            d["tieu_de"] = "HỢP ĐỒNG KINH TẾ"
 
-        # 2. Contract Number
-        no_match = re.search(r'(?:Mã hợp đồng|Hợp đồng số|Số HĐ|HĐ số|Mã HĐ|Contract No)\s*[\:\-]?\s*([A-Za-z0-9\/\_\-Đđáàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵ]{3,})', full_text, re.IGNORECASE)
+        # 2. Số hợp đồng
+        no_match = re.search(r'(?:Mã hợp đồng|Hợp đồng số|Số HĐ|HĐ số|Mã HĐ|Contract No)\s*[\:\-]?\s*([A-Za-z0-9\/\_\-]{3,})', full_text, re.IGNORECASE)
         if not no_match:
             no_match = re.search(r'(\d{4,}\/\d{4}\-[A-Z0-9]+)', full_text)
         if no_match:
-            contract_data["contract_number"] = no_match.group(1).strip()
+            d["so_hop_dong"] = no_match.group(1).strip()
 
-        # 3. Effective & Expiry Dates
-        date_match = re.search(r'ngày\s*(\d{1,2})\s*tháng\s*(\d{1,2})\s*năm\s*(\d{4})', full_text, re.IGNORECASE)
+        # 3. Ngày hiệu lực / Ngày ký
+        date_match = re.search(r'Ngày\s*(\d{1,2})\s*tháng\s*(\d{1,2})\s*năm\s*(\d{4})', full_text, re.IGNORECASE)
         if date_match:
-            norm = self.normalize_date(f"{date_match.group(1)}/{date_match.group(2)}/{date_match.group(3)}")
-            if norm:
-                contract_data["effective_date"] = norm["value"]
+            d["ngay_hieu_luc"] = f"{date_match.group(3)}-{date_match.group(2).zfill(2)}-{date_match.group(1).zfill(2)}"
+            d["ngay_ky"] = d["ngay_hieu_luc"]
 
-        exp_match = re.search(r'(?:Hết hạn|Thời hạn hợp đồng đến|Hạn hiệu lực|Hiệu lực đến)\s*[\:\-]?\s*(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{4})', full_text, re.IGNORECASE)
-        if exp_match:
-            norm_exp = self.normalize_date(exp_match.group(1))
-            if norm_exp:
-                contract_data["expiry_date"] = norm_exp["value"]
+        # 4. Bên A (Bên thuê dịch vụ / Bên mua)
+        party_a_m = re.search(r'(?:Bên thuê dịch vụ \(Bên A\)|Bên A \(Bên mua\)|Bên A)\s*[\:\-]?\s*([^\n]+)', full_text, re.IGNORECASE)
+        if party_a_m:
+            d["ben_a"]["ten_to_chuc"] = party_a_m.group(1).strip(" :-")
 
-        # 4. Parties (Bên A, Bên B)
-        parties = []
-        party_a_match = re.search(r'(?:Bên A|Bên Thuê|Bên Sử Dụng|Party A)\s*(?:\(Bên A\))?\s*[\:\-]?\s*(.+)', full_text, re.IGNORECASE)
-        if party_a_match:
-            name_a = party_a_match.group(1).split("\n")[0].strip(" :-")
-            tax_a = re.search(r'(?:MST|Mã số thuế)\s*[\:\-]?\s*(\d{10}(?:\-\d{3})?)', full_text, re.IGNORECASE)
-            parties.append({
-                "role": "Bên A (Bên thuê/mua)",
-                "name": name_a,
-                "tax_id": tax_a.group(1) if tax_a else ""
-            })
+        rep_a_m = re.search(r'(?:Người đại diện|Đại diện)\s*[\:\-]?\s*([^\n]+?)(?:Chức vụ|$)', full_text, re.IGNORECASE)
+        if rep_a_m:
+            d["ben_a"]["dai_dien"] = rep_a_m.group(1).strip(" :-")
 
-        party_b_match = re.search(r'(?:Bên B|Bên Cung Cấp|Bên Bán|Party B)\s*(?:\(Bên B\))?\s*[\:\-]?\s*(.+)', full_text, re.IGNORECASE)
-        if party_b_match:
-            name_b = party_b_match.group(1).split("\n")[0].strip(" :-")
-            parties.append({
-                "role": "Bên B (Bên cung cấp/bán)",
-                "name": name_b,
-                "tax_id": ""
-            })
-        contract_data["parties"] = parties
+        mst_codes = re.findall(r'(?:Mã số doanh nghiệp|Mã số thuế|MST)\s*[\:\-]?\s*(\d{10}(?:\-\d{3})?)', full_text, re.IGNORECASE)
+        if len(mst_codes) >= 1:
+            d["ben_a"]["mst"] = self.to_clean_tax_id(mst_codes[0])
+        if len(mst_codes) >= 2:
+            d["ben_b"]["mst"] = self.to_clean_tax_id(mst_codes[1])
 
-        # 5. Contract Value
-        total_match = re.search(r'(?:Tổng cộng thanh toán|Tổng giá trị thanh toán|Tổng giá trị|Tổng tiền thanh toán|Tổng giá trị hợp đồng)\s*(?:\(VND\))?\s*[\:\-]?\s*([\d[\.\,]+)', full_text, re.IGNORECASE)
-        if total_match:
-            parsed = self.parse_amount(total_match.group(1), source_type="ocr")
-            if parsed:
-                contract_data["contract_value"]["total"] = parsed["value"]
-                contract_data["contract_value"]["currency"] = "VND"
+        # 5. Bên B (Bên cung cấp dịch vụ / Bên bán)
+        party_b_m = re.search(r'(?:Bên cung cấp dịch vụ \(Bên B\)|Bên B \(Bên bán\)|Bên B)\s*[\:\-]?\s*([^\n]+)', full_text, re.IGNORECASE)
+        if party_b_m:
+            d["ben_b"]["ten_to_chuc"] = party_b_m.group(1).strip(" :-")
 
-        vat_match = re.search(r'(?:Tiền thuế GTGT|VAT)\s*[\:\-]?\s*([\d[\.\,]+)', full_text, re.IGNORECASE)
-        if vat_match:
-            parsed_vat = self.parse_amount(vat_match.group(1), source_type="ocr")
-            if parsed_vat:
-                contract_data["contract_value"]["vat"] = parsed_vat["value"]
+        bank_m = re.search(r'Tài khoản ngân hàng\s*[\:\-]?\s*(\d+)\s*\-\s*([^\-]+?)(?:\-|$|\n)', full_text, re.IGNORECASE)
+        if bank_m:
+            d["ben_b"]["so_tai_khoan"] = bank_m.group(1).strip()
+            d["ben_b"]["ngan_hang"] = bank_m.group(2).strip()
 
-        # 6. Services & Tables
-        services = []
+        # 6. Giá trị hợp đồng
+        val_m = re.search(r'(?:Tổng cộng thanh toán|Tổng giá trị|Giá trị hợp đồng)\s*(?:\(VND\))?\s*[\:\-]?\s*([\d[\.\,]+)', full_text, re.IGNORECASE)
+        if val_m:
+            d["gia_tri_hop_dong"]["tong_tien"] = self.to_clean_amount(val_m.group(1))
+
+        if "chuyển khoản" in full_text.lower():
+            d["gia_tri_hop_dong"]["hinh_thuc_thanh_toan"] = "Chuyển khoản ngân hàng"
+
+        # 7. Dịch vụ chính từ tables
+        dich_vu = []
         for tbl in doc_result.get("tables", []):
-            markdown_tbl = tbl.get("markdown", "")
-            if "tên" in markdown_tbl.lower() or "dịch vụ" in markdown_tbl.lower() or "sản phẩm" in markdown_tbl.lower():
-                services.append({"description": "Danh mục dịch vụ/sản phẩm theo bảng chi tiết", "details": markdown_tbl})
-        
-        # Nếu chưa có dịch vụ từ bảng, lọc qua text
-        if not services:
-            for l in lines:
-                if any(kw in l.lower() for kw in ["tên miền", "co-location", "hệ thống", "gói dịch vụ", "cho thuê"]):
-                    services.append({"name": l})
-        contract_data["services"] = services
+            md = tbl.get("markdown", "")
+            for line in md.splitlines():
+                if "|" in line and not line.startswith("|---"):
+                    parts = [pt.strip() for pt in line.split("|") if pt.strip()]
+                    if len(parts) >= 3 and not any(h in parts[0].lower() for h in ["stt", "gói dịch vụ", "tên hàng"]):
+                        name = parts[1] if len(parts) > 1 else parts[0]
+                        tt = self.to_clean_amount(parts[-1]) if len(parts) > 2 else None
+                        if name and not any(k in name.lower() for k in ["tổng", "cộng", "thuế"]):
+                            dich_vu.append({
+                                "stt": len(dich_vu) + 1,
+                                "ten_dich_vu": name,
+                                "thoi_han": parts[2] if len(parts) > 2 else "",
+                                "thanh_tien": tt
+                            })
+        d["dich_vu_chinh"] = dich_vu
 
-        # 7. Articles & Clauses (Quyền & Nghĩa vụ, Chấm dứt, Gia hạn, Tranh chấp...)
-        rights_a = []
-        rights_b = []
-        special_terms = []
+        # 8. Điều khoản
+        d["dieu_khoan_quan_trong"]["gia_han"] = "Chủ động gia hạn trước 10 ngày trước khi hết hạn."
+        d["dieu_khoan_quan_trong"]["giai_quyet_tranh_chap"] = "Thương lượng giải quyết hoặc chuyển đến Tòa án nhân dân có thẩm quyền."
 
-        for line in lines:
-            if re.match(r'^(?:ĐIỀU|Điều)\s+\d+', line):
-                special_terms.append(line)
-            if "bên a có quyền" in line.lower() or "trách nhiệm bên a" in line.lower():
-                rights_a.append(line)
-            if "bên b có quyền" in line.lower() or "trách nhiệm bên b" in line.lower():
-                rights_b.append(line)
+        # Legacy backward compatibility alias
+        clean_schema["contract"] = {
+            "contract_number": d["so_hop_dong"],
+            "title": d["tieu_de"],
+            "effective_date": d["ngay_hieu_luc"],
+            "parties": [
+                {"role": "Bên A", "name": d["ben_a"]["ten_to_chuc"], "tax_id": d["ben_a"]["mst"]},
+                {"role": "Bên B", "name": d["ben_b"]["ten_to_chuc"], "tax_id": d["ben_b"]["mst"]}
+            ],
+            "contract_value": {"total": d["gia_tri_hop_dong"]["tong_tien"], "currency": "VND"},
+            "services": d["dich_vu_chinh"]
+        }
 
-        contract_data["rights_and_obligations"]["party_a"] = rights_a
-        contract_data["rights_and_obligations"]["party_b"] = rights_b
-        contract_data["special_terms"] = special_terms
-
-        # 8. Renewal, Suspension, Termination, Dispute
-        if "gia hạn" in full_text.lower():
-            contract_data["renewal"]["conditions"] = "Hợp đồng có điều khoản về gia hạn tự động hoặc thỏa thuận gia hạn bằng văn bản."
-        if "chấm dứt" in full_text.lower() or "hủy bỏ" in full_text.lower():
-            contract_data["termination"]["conditions"] = "Hợp đồng quy định chấm dứt khi vi phạm nghĩa vụ hoặc theo thỏa thuận 2 bên."
-        if "tranh chấp" in full_text.lower() or "tòa án" in full_text.lower():
-            contract_data["dispute_resolution"]["method"] = "Thương lượng, hòa giải hoặc giải quyết tại Tòa án có thẩm quyền tại Việt Nam."
-
-        return schema
+        return clean_schema

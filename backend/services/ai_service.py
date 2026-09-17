@@ -8,11 +8,32 @@ except ImportError:
 class AIService:
 
     def __init__(self):
-        # Sử dụng Google Gemini thông qua OpenAI Compatibility endpoint
-        self.client = OpenAI(
-            api_key=GEMINI_API_KEY,
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
-        )
+        raw_keys = (GEMINI_API_KEY or "").split(",")
+        self.keys = [k.strip() for k in raw_keys if k.strip()]
+        self.base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+
+    def _call_with_retry(self, messages, temperature=0.2):
+        """Thử gọi qua các API Key cho đến khi thành công."""
+        last_err = None
+        for i, key in enumerate(self.keys):
+            try:
+                client = OpenAI(api_key=key, base_url=self.base_url)
+                response = client.chat.completions.create(
+                    model=MODEL_NAME,
+                    messages=messages,
+                    temperature=temperature
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                masked_key = key[:8] + "..." if len(key) > 8 else "***"
+                print(f"[AIService] Key {masked_key} gặp lỗi ({e}). Đang thử key tiếp theo...")
+                last_err = e
+                continue
+
+        # Nếu toàn bộ key đều lỗi (do 429 quota rate limit)
+        err_msg = str(last_err) if last_err else "API Gemini lỗi"
+        print(f"[AIService] ⚠️ Toàn bộ API keys đều hết quota: {err_msg}")
+        return f"⚠️ [Hệ thống tạm thời đạt giới hạn API Gemini (429 Rate Limit)]: Vui lòng thử lại sau ít phút hoặc cấu hình thêm API Key. ({err_msg[:120]})"
 
     def chat(self, messages, system_instruction=None):
         """Gửi hội thoại tới Gemini API và nhận phản hồi."""
@@ -27,12 +48,7 @@ class AIService:
             *messages
         ]
 
-        response = self.client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=full_messages,
-        )
-
-        return response.choices[0].message.content
+        return self._call_with_retry(full_messages)
 
     def summarize_document(self, doc_context: str, user_instruction: str = None) -> str:
         """Tạo bản tóm tắt chi tiết, có cấu trúc từ nội dung và bảng biểu của tài liệu đã trích xuất."""
@@ -57,18 +73,15 @@ class AIService:
             "Lưu ý: Trình bày đẹp mắt, dùng bullet points, in đậm các từ khóa/số liệu quan trọng để người đọc nắm bắt nhanh nhất."
         )
 
-        response = self.client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Bạn là chuyên gia phân tích và tóm tắt tài liệu doanh nghiệp, pháp lý, kế toán và hành chính. "
-                        "Bạn luôn đưa ra bản tóm tắt súc tích, chính xác theo đúng sự thật trong tài liệu, không bịa đặt số liệu."
-                    )
-                },
-                {"role": "user", "content": prompt}
-            ],
-        )
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Bạn là chuyên gia phân tích và tóm tắt tài liệu doanh nghiệp, pháp lý, kế toán và hành chính. "
+                    "Bạn luôn đưa ra bản tóm tắt súc tích, chính xác theo đúng sự thật trong tài liệu, không bịa đặt số liệu."
+                )
+            },
+            {"role": "user", "content": prompt}
+        ]
 
-        return response.choices[0].message.content
+        return self._call_with_retry(messages)

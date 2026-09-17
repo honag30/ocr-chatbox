@@ -10,16 +10,15 @@ if BACKEND_DIR not in sys.path:
 
 from backend.services.document_service import DocumentService
 from backend.services.chat_service import ChatService
-from backend.config import DOC_DIR
+
+TEST_DOC_DIR = os.path.join(BASE_DIR, "archive", "test-chatbox", "doc")
 
 
 def test_document_extraction():
     print("\n--- TEST 1: Kiểm tra DocumentService trích xuất từ backend/core_ocr ---")
     doc_service = DocumentService()
 
-    sample_pdf = os.path.join(DOC_DIR, "hop_dong", "hop_dong_mua_ban_tai_san.pdf")
-    if not os.path.exists(sample_pdf):
-        sample_pdf = os.path.join(DOC_DIR, "hop_dong", "HĐ tên miền verco.vn (1).pdf")
+    sample_pdf = os.path.join(TEST_DOC_DIR, "hop_dong", "SO-10685-26.pdf")
 
     assert os.path.exists(sample_pdf), f"File không tồn tại: {sample_pdf}"
     print(f"Đọc file: {os.path.basename(sample_pdf)}")
@@ -41,9 +40,7 @@ def test_chat_and_summarize_integration():
     print("\n--- TEST 2: Kiểm tra Upload, Tóm tắt & Hỏi đáp ngữ cảnh (ChatService) ---")
     chat = ChatService()
 
-    sample_pdf = os.path.join(DOC_DIR, "hop_dong", "hop_dong_mua_ban_tai_san.pdf")
-    if not os.path.exists(sample_pdf):
-        sample_pdf = os.path.join(DOC_DIR, "hop_dong", "HĐ tên miền verco.vn (1).pdf")
+    sample_pdf = os.path.join(TEST_DOC_DIR, "hop_dong", "SO-10685-26.pdf")
 
     print(f"Bắt đầu upload & tóm tắt: {os.path.basename(sample_pdf)}")
     summary, doc_result = chat.upload_and_summarize(sample_pdf)
@@ -65,7 +62,7 @@ def test_image_extraction_and_summary():
     print("\n--- TEST 3: Kiểm tra OCR ảnh & Tóm tắt giao dịch ---")
     chat = ChatService()
 
-    sample_img = os.path.join(DOC_DIR, "anh_chuyen_khoan", "Screenshot_20260714_205030_VCB_Digibank.jpg")
+    sample_img = os.path.join(TEST_DOC_DIR, "anh_chuyen_khoan", "Screenshot_20260714_205030_VCB_Digibank.jpg")
     if os.path.exists(sample_img):
         print(f"Bắt đầu OCR & tóm tắt ảnh: {os.path.basename(sample_img)}")
         summary, doc_result = chat.upload_and_summarize(sample_img)

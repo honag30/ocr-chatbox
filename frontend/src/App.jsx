@@ -19,6 +19,20 @@ async function safeJson(res) {
   }
 }
 
+function extractErrorMessage(data, fallback = 'Đã xảy ra lỗi từ hệ thống') {
+  if (!data) return fallback;
+  if (typeof data === 'string') return data;
+  if (typeof data.detail === 'string') return data.detail;
+  if (Array.isArray(data.detail)) {
+    return data.detail.map((d) => (typeof d === 'string' ? d : d.msg || JSON.stringify(d))).join('; ');
+  }
+  if (typeof data.detail === 'object' && data.detail !== null) {
+    return data.detail.msg || JSON.stringify(data.detail);
+  }
+  if (data.message) return data.message;
+  return fallback;
+}
+
 export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   const [activeTab, setActiveTab] = useState('history'); // 'history' | 'files'
@@ -197,7 +211,7 @@ export default function App() {
 
       const data = await safeJson(res);
       if (!data) throw new Error(`Server trả về phản hồi không hợp lệ (HTTP ${res.status})`);
-      if (!res.ok) throw new Error(data.detail || 'Lỗi từ server');
+      if (!res.ok) throw new Error(extractErrorMessage(data, 'Lỗi từ server'));
 
       const aiMsg = {
         role: 'assistant',
@@ -211,7 +225,7 @@ export default function App() {
       const errorMsg = {
         role: 'assistant',
         isError: true,
-        content: err.message,
+        content: err.message || 'Lỗi không xác định',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       setMessages((prev) => [...prev, errorMsg]);
@@ -248,7 +262,7 @@ export default function App() {
 
       const data = await safeJson(res);
       if (!data) throw new Error(`Server trả về phản hồi không hợp lệ (HTTP ${res.status}). Có thể file quá lớn hoặc OCR thất bại.`);
-      if (!res.ok) throw new Error(data.detail || 'Lỗi khi upload file');
+      if (!res.ok) throw new Error(extractErrorMessage(data, 'Lỗi khi upload file'));
 
       setActiveDoc(data.doc_result);
 
@@ -274,7 +288,7 @@ export default function App() {
       const errorMsg = {
         role: 'assistant',
         isError: true,
-        content: err.message,
+        content: err.message || 'Lỗi không xác định',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       setMessages((prev) => [...prev, errorMsg]);
@@ -283,9 +297,22 @@ export default function App() {
     }
   };
 
-  const handleSelectFile = async (filePath) => {
+  const handleSelectFile = async (fileInput) => {
     if (isUploading) return;
     setIsUploading(true);
+
+    let payload = {};
+    if (typeof fileInput === 'object' && fileInput !== null) {
+      payload = {
+        doc_id: fileInput.id,
+        file_name: fileInput.name,
+        file_path: fileInput.path || String(fileInput.id),
+      };
+    } else if (typeof fileInput === 'number') {
+      payload = { doc_id: fileInput };
+    } else {
+      payload = { file_path: String(fileInput) };
+    }
 
     try {
       const controller = new AbortController();
@@ -296,7 +323,7 @@ export default function App() {
         res = await fetch('/api/select-file', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ file_path: filePath }),
+          body: JSON.stringify(payload),
           signal: controller.signal,
         });
       } finally {
@@ -305,13 +332,13 @@ export default function App() {
 
       const data = await safeJson(res);
       if (!data) throw new Error(`Server trả về phản hồi không hợp lệ (HTTP ${res.status}). Có thể OCR thất bại hoặc file không hợp lệ.`);
-      if (!res.ok) throw new Error(data.detail || 'Lỗi khi đọc file');
+      if (!res.ok) throw new Error(extractErrorMessage(data, 'Lỗi khi đọc file'));
 
       setActiveDoc(data.doc_result);
 
       const userMsg = {
         role: 'user',
-        content: `Tải lên và tóm tắt: **${data.filename}**`,
+        content: `Xem và tóm tắt tài liệu: **${data.filename}**`,
         docResult: data.doc_result,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
@@ -329,7 +356,7 @@ export default function App() {
       const errorMsg = {
         role: 'assistant',
         isError: true,
-        content: err.message,
+        content: err.message || 'Lỗi không xác định',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       setMessages((prev) => [...prev, errorMsg]);

@@ -82,8 +82,13 @@ def _fast_extract_text_for_classify(file_path: str, max_chars: int = 800) -> str
             # OCR nhanh: readtext với detail=0, không preprocess nặng
             try:
                 reader = get_ocr_reader()
-                results = reader.readtext(file_path, detail=0)
-                text = " ".join(results)
+                if reader is not None:
+                    results = reader.readtext(file_path, detail=0)
+                    text = " ".join(results)
+                else:
+                    from input_handler import read_image_with_vision_api
+                    res = read_image_with_vision_api(file_path)
+                    text = res.get("full_text", "")
             except Exception as e:
                 print(f"  [Classify] OCR error: {e}")
 

@@ -1,0 +1,278 @@
+{
+  "info": {
+    "_postman_id": "b7891234-a1b2-4c3d-e4f5-67890abcdef1",
+    "name": "AI Document Chatbox System API",
+    "description": "Bộ sưu tập Postman API đầy đủ cho AI Document Chatbox System (Backend FastAPI)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/health",
+              "host": ["{{base_url}}"],
+              "path": ["api", "health"]
+            },
+            "description": "Kiểm tra trạng thái server Backend"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Document Management",
+      "item": [
+        {
+          "name": "1. Upload Tài Liệu (OCR & Trích xuất)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "File tài liệu cần upload (.pdf, .png, .jpg, .docx, .xlsx, .txt, .json)"
+                },
+                {
+                  "key": "instruction",
+                  "value": "Trích xuất thông tin tóm tắt và các điều khoản/khoản mục quan trọng.",
+                  "type": "text",
+                  "description": "Hướng dẫn hoặc yêu cầu phân tích bổ sung (tùy chọn)"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/upload",
+              "host": ["{{base_url}}"],
+              "path": ["api", "upload"]
+            },
+            "description": "Tải lên tài liệu, tự động kích hoạt Core OCR trích xuất dữ liệu và lưu vào CSDL MySQL."
+          },
+          "response": []
+        },
+        {
+          "name": "2. Lấy Danh Sách Toàn Bộ Tài Liệu",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/files",
+              "host": ["{{base_url}}"],
+              "path": ["api", "files"]
+            },
+            "description": "Lấy danh sách các file/tài liệu đã lưu trong Database."
+          },
+          "response": []
+        },
+        {
+          "name": "3. Chọn Tài Liệu Có Sẵn Từ Database",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"doc_id\": 1,\n  \"file_name\": \"SO-10685-26.pdf\",\n  \"instruction\": \"Tóm tắt ngắn gọn các thông tin then chốt\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/select-file",
+              "host": ["{{base_url}}"],
+              "path": ["api", "select-file"]
+            },
+            "description": "Nạp tài liệu đã lưu trong Database vào ngữ cảnh phiên chat hiện tại."
+          },
+          "response": []
+        },
+        {
+          "name": "4. Lấy Chi Tiết Tài Liệu & Kết Quả Trích Xuất Theo ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/documents/:doc_id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "documents", ":doc_id"],
+              "variable": [
+                {
+                  "key": "doc_id",
+                  "value": "1",
+                  "description": "ID tài liệu trong Database"
+                }
+              ]
+            },
+            "description": "Lấy chi tiết và dữ liệu JSON tinh gọn trích xuất từ tài liệu."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Chat & Sessions",
+      "item": [
+        {
+          "name": "1. Gửi Tin Nhắn Hỏi Đáp (Chat)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Tóm tắt các điều khoản chính hoặc thông tin bên A, bên B trong tài liệu này giúp tôi.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/chat",
+              "host": ["{{base_url}}"],
+              "path": ["api", "chat"]
+            },
+            "description": "Gửi câu hỏi cho Gemini AI để trao đổi về tài liệu đang được chọn."
+          },
+          "response": []
+        },
+        {
+          "name": "2. Lấy Danh Sách Phiên Chat (Sessions)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/sessions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sessions"]
+            },
+            "description": "Lấy danh sách tất cả các phiên chat và session ID đang hoạt động."
+          },
+          "response": []
+        },
+        {
+          "name": "3. Tạo Phiên Chat Mới",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/sessions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sessions"]
+            },
+            "description": "Khởi tạo một phiên chat mới."
+          },
+          "response": []
+        },
+        {
+          "name": "4. Chuyển Đổi Phiên Chat (Switch Session)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"your-session-id-uuid-here\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/sessions/switch",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sessions", "switch"]
+            },
+            "description": "Chuyển sang phiên hội thoại khác theo session_id."
+          },
+          "response": []
+        },
+        {
+          "name": "5. Xóa Phiên Chat",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/sessions/:session_id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sessions", ":session_id"],
+              "variable": [
+                {
+                  "key": "session_id",
+                  "value": "your-session-id-uuid-here",
+                  "description": "ID của session cần xóa"
+                }
+              ]
+            },
+            "description": "Xóa một phiên trò chuyện khỏi CSDL."
+          },
+          "response": []
+        },
+        {
+          "name": "6. Lấy Lịch Sử Tin Nhắn Hiện Tại",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/history",
+              "host": ["{{base_url}}"],
+              "path": ["api", "history"]
+            },
+            "description": "Lấy toàn bộ tin nhắn hội thoại và tài liệu hiện tại."
+          },
+          "response": []
+        },
+        {
+          "name": "7. Lấy Kết Quả OCR/KIE Tài Liệu Hiện Tại",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/doc-result",
+              "host": ["{{base_url}}"],
+              "path": ["api", "doc-result"]
+            },
+            "description": "Lấy thông tin và dữ liệu trích xuất của tài liệu đang hoạt động."
+          },
+          "response": []
+        },
+        {
+          "name": "8. Xóa Sạch Ngữ Cảnh & Tin Nhắn Hiện Tại (Clear)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/clear",
+              "host": ["{{base_url}}"],
+              "path": ["api", "clear"]
+            },
+            "description": "Xóa toàn bộ lịch sử tin nhắn và ngữ cảnh tài liệu đang chọn trong phiên hiện tại."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

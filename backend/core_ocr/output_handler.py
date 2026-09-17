@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+from datetime import datetime
 
 # Ensure sys.path includes package dirs
 CORE_OCR_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -33,81 +34,60 @@ def save_ocr_output(
 ) -> tuple[str, str]:
     """
     Lưu kết quả đọc/trích xuất tài liệu:
-    - Nếu kết nối MySQL thành công và lưu vào CSDL thành công -> bỏ qua lưu file vào folder.
-    - Nếu chưa lưu được vào DB -> fallback lưu vào folder output standard.
+    - Trích xuất thông tin trọng tâm tinh gọn (Clean / Essential Key Information Extraction - KIE).
+    - Xuất file [OCR] - {base_name}.json CHỈ chứa các thông tin quan trọng để xử lý downstream.
+    - Xuất file [OCR] - {base_name}.txt cho việc đọc hiểu và kiểm tra.
+    - Lưu vào CSDL MySQL (nếu có kết nối).
     """
-    # 1. Thử lưu vào CSDL MySQL
-    try:
-        from db import save_ocr_document
-        
-        file_path = doc_result.get("file_path", "")
-        file_size = os.path.getsize(file_path) if file_path and os.path.exists(file_path) else 0
-        file_type = os.path.splitext(original_filename)[1].lower()
-        full_text = doc_result.get("full_text", "")
-
-        doc_id = save_ocr_document(
-            file_name=original_filename,
-            file_path=file_path,
-            file_size=file_size,
-            file_type=file_type,
-            category=category_code,
-            extracted_text=full_text,
-            ocr_data_json=doc_result,
-            eval_report=eval_report,
-            status="completed"
-        )
-        if doc_id:
-            print(f"[OutputHandler] ✅ Đã lưu kết quả OCR thành công vào MySQL Database (ID: {doc_id}). Bỏ qua lưu folder output.")
-            return f"DB_DOC_ID:{doc_id}", f"DB_DOC_ID:{doc_id}"
-    except Exception as db_err:
-        print(f"[OutputHandler] Không thể lưu vào MySQL DB ({db_err}). Tiến hành lưu vào folder output...")
-
-    # 2. Fallback lưu vào folder output
+    full_text = doc_result.get("full_text", "")
     base_name = os.path.splitext(original_filename)[0]
+
+    # 1. Phân loại và chuẩn hóa document_type
+    type_map = {
+        "hop_dong": "contract",
+        "contract": "contract",
+        "hoa_don": "invoice",
+        "invoice": "invoice",
+        "chung_tu": "voucher",
+        "voucher": "voucher",
+        "anh_chuyen_khoan": "bank_transfer",
+        "bank_transfer": "bank_transfer",
+        "khac": "unknown"
+    }
+    doc_type = type_map.get(category_code, "unknown")
+
+    # 2. Trích xuất thông tin có cấu trúc tinh gọn (KIE)
+    llm_ext = LLMExtractor()
+    structured_data, extraction_metadata = llm_ext.extract(doc_result, doc_type)
+
+    # Lấy payload sạch nằm trong trường "data"
+    if isinstance(structured_data, dict) and "data" in structured_data:
+        clean_data = structured_data["data"]
+    else:
+        clean_data = structured_data
+
+    # Generate Summary
+    doc_summary = generate_document_summary(structured_data, doc_type, doc_result)
+
+    # 3. Tạo thư mục output chuẩn
     doc_folder = os.path.join(output_base_dir, category_code, base_name)
     os.makedirs(doc_folder, exist_ok=True)
 
     out_filename_txt = f"[OCR] - {base_name}.txt"
     out_filename_json = f"[OCR] - {base_name}.json"
+    out_filename_kie = f"[KIE] - {base_name}.json"
 
     out_path_txt = os.path.join(doc_folder, out_filename_txt)
     out_path_json = os.path.join(doc_folder, out_filename_json)
+    out_path_kie = os.path.join(doc_folder, out_filename_kie)
 
-    full_text = doc_result.get("full_text", "")
-    extracted_entities = extract_entities(doc_result, category_code)
-    entity_fields = extracted_entities.get("fields", {})
-
-    # Classification & Document Understanding Layer
-    type_map = {
-        "hop_dong": "contract",
-        "hoa_don": "invoice",
-        "chung_tu": "voucher",
-        "anh_chuyen_khoan": "bank_transfer",
-        "khac": "unknown"
-    }
-    doc_type = type_map.get(category_code, "unknown")
-
-    classification_meta = {
-        "document_type": doc_type,
-        "category": category_code,
-        "confidence": 0.95 if doc_type != "unknown" else 0.42,
-        "reason": f"Phân loại danh mục '{category_code}' tự động thành loại tài liệu '{doc_type}'."
-    }
-
-    # Extract Structured Data via LLMExtractor (Gemini / Rule-based fallback)
-    llm_ext = LLMExtractor()
-    structured_data, extraction_metadata = llm_ext.extract(doc_result, doc_type)
-
-    # Generate Summary
-    doc_summary = generate_document_summary(structured_data, doc_type, doc_result)
-
-    # 1. Lưu file TXT
+    # 4. Ghi file TXT (Văn bản + Summary để kiểm tra thủ công)
     with open(out_path_txt, "w", encoding="utf-8") as out:
         out.write(f"=== KẾT QUẢ TRÍCH XUẤT TÀI LIỆU: {original_filename} ===\n")
         out.write(f"Danh mục: {category_code}\n")
         out.write(f"Loại tài liệu (Document Type): {doc_type}\n")
         out.write(f"Định dạng nguồn (Source Type): {doc_result.get('source_type')}\n")
-        out.write(f"Phương pháp trích xuất (Method): {doc_result.get('extraction_method')}\n\n")
+        out.write(f"Phương pháp trích xuất: {doc_result.get('extraction_method')}\n\n")
 
         # In Document Summary rendered
         root_temp = {
@@ -117,7 +97,7 @@ def save_ocr_output(
         }
         out.write(render_document_summary(root_temp) + "\n\n")
 
-        out.write("--- NỘI DUNG VĂN BẢN ---\n")
+        out.write("--- NỘI DUNG VĂN BẢN ĐỌC ĐƯỢC ---\n")
         out.write(full_text + "\n\n")
 
         tables = doc_result.get("tables", [])
@@ -127,57 +107,52 @@ def save_ocr_output(
                 out.write(f"\n[Bảng {t_idx} - Trang {tbl.get('page', 1)}]\n")
                 out.write(tbl.get("markdown", "") + "\n")
 
-        if entity_fields:
-            out.write("\n--- THÔNG TIN TRÍCH XUẤT CẤU TRÚC (EXTRACTED ENTITIES) ---\n")
-            for k, v in entity_fields.items():
-                if isinstance(v, list):
-                    v_str = ", ".join(map(str, v))
-                else:
-                    v_str = str(v)
-                out.write(f"• {k}: {v_str}\n")
-
         if eval_report:
             out.write("\n" + eval_report + "\n")
 
-    # 2. Lưu file JSON mở rộng (Bảo tồn 100% tất cả các trường cũ)
-    ocr_lines_legacy = []
-    line_idx = 1
-    for pg in doc_result.get("pages", []):
-        pg_lines = pg.get("lines", [])
-        pg_confs = pg.get("confidences", [])
-        for i, l in enumerate(pg_lines):
-            conf_val = pg_confs[i] * 100.0 if (pg_confs and i < len(pg_confs) and pg_confs[i] is not None) else None
-            ocr_lines_legacy.append({
-                "index": line_idx,
-                "page": pg.get("page", 1),
-                "text": l,
-                "confidence": conf_val
-            })
-            line_idx += 1
-
-    json_data = {
-        "original_filename": original_filename,
-        "category": category_code,
-        "document_type": doc_type,
-        "source_type": doc_result.get("source_type"),
-        "extraction_method": doc_result.get("extraction_method"),
-        "has_table": doc_result.get("has_table", False),
-        "total_pages": doc_result.get("total_pages", 1),
-        "extracted_entities": entity_fields,
-        "pages": doc_result.get("pages", []),
-        "full_text": full_text,
-        "tables": doc_result.get("tables", []),
-        "ocr_lines": ocr_lines_legacy,
-
-        # New Document Understanding Layers
-        "document_summary": doc_summary,
-        "structured_data": structured_data,
-        "classification": classification_meta,
-        "extraction_metadata": extraction_metadata
+    # 5. Ghi file JSON TINH GỌN (Chỉ chứa thông tin quan trọng)
+    clean_json_output = {
+        "document_type": category_code,
+        "file_metadata": {
+            "file_name": original_filename,
+            "category": category_code,
+            "source_type": doc_result.get("source_type"),
+            "total_pages": doc_result.get("total_pages", 1),
+            "processed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        },
+        "data": clean_data
     }
 
     with open(out_path_json, "w", encoding="utf-8") as jout:
-        json.dump(json_data, jout, ensure_ascii=False, indent=2)
+        json.dump(clean_json_output, jout, ensure_ascii=False, indent=2)
+
+    with open(out_path_kie, "w", encoding="utf-8") as kjout:
+        json.dump(clean_json_output, kjout, ensure_ascii=False, indent=2)
+
+    # 6. Đồng bộ lưu vào CSDL MySQL (nếu có cấu hình DB)
+    doc_result["key_information"] = clean_data
+    doc_result["structured_data"] = structured_data
+    try:
+        from db import save_ocr_document
+        file_path = doc_result.get("file_path", "")
+        file_size = os.path.getsize(file_path) if file_path and os.path.exists(file_path) else 0
+        file_type = os.path.splitext(original_filename)[1].lower()
+
+        doc_id = save_ocr_document(
+            file_name=original_filename,
+            file_path=file_path,
+            file_size=file_size,
+            file_type=file_type,
+            category=category_code,
+            extracted_text=full_text,
+            ocr_data_json=clean_json_output,
+            eval_report=eval_report,
+            status="completed"
+        )
+        if doc_id:
+            print(f"[OutputHandler] ✅ Đã lưu JSON tinh gọn vào MySQL Database (ID: {doc_id}) và folder: {out_path_json}")
+    except Exception as db_err:
+        pass
 
     return out_path_txt, out_path_json
 
@@ -189,9 +164,13 @@ def display_ocr_result(original_filename: str, doc_result: dict, eval_report: st
     full_text = doc_result.get("full_text", "")
     type_map = {
         "hop_dong": "contract",
+        "contract": "contract",
         "hoa_don": "invoice",
+        "invoice": "invoice",
         "chung_tu": "voucher",
+        "voucher": "voucher",
         "anh_chuyen_khoan": "bank_transfer",
+        "bank_transfer": "bank_transfer",
         "khac": "unknown"
     }
     doc_type = type_map.get(category_code, "unknown")

@@ -1,16 +1,27 @@
 def build_bank_transfer_summary(bank_data: dict, doc_result: dict) -> dict:
     """
-    Sinh document_summary chuyên biệt cho Ảnh chuyển khoản ngân hàng.
+    Sinh document_summary chuyên biệt cho Ảnh chuyển khoản ngân hàng (hỗ trợ cả schema sạch lẫn legacy).
     """
-    bt_info = bank_data.get("bank_transfer", {})
-    bank = bt_info.get("bank_name", "Ngân hàng")
-    tx_id = bt_info.get("transaction_id", "")
-    amt = bt_info.get("amount", {}).get("value")
-    sender = bt_info.get("sender", {}).get("name", "")
-    receiver = bt_info.get("receiver", {}).get("name", "")
-    date = bt_info.get("transaction_date", "")
+    bt_info = bank_data.get("data") or bank_data.get("bank_transfer") or bank_data
+    
+    recv_obj = bt_info.get("nguoi_nhan") or bt_info.get("receiver", {})
+    receiver = recv_obj.get("ho_ten") or recv_obj.get("name", "")
+    recv_bank = recv_obj.get("ngan_hang") or ""
+    
+    send_obj = bt_info.get("nguoi_gui") or bt_info.get("sender", {})
+    sender = send_obj.get("ho_ten") or send_obj.get("name", "")
 
-    short_summary = f"Biên nhận chuyển khoản {bank}"
+    bank = recv_bank or bt_info.get("bank_name", "Ngân hàng")
+    tx_id = bt_info.get("ma_giao_dich") or bt_info.get("transaction_id", "")
+    
+    amt = bt_info.get("so_tien")
+    if amt is None:
+        amt = bt_info.get("amount", {}).get("value")
+
+    date = bt_info.get("thoi_gian_giao_dich") or bt_info.get("transaction_date", "")
+    content = bt_info.get("noi_dung") or bt_info.get("transfer_content", "")
+
+    short_summary = f"Biên nhận chuyển khoản {bank}" if bank else "Biên nhận chuyển khoản"
     if tx_id:
         short_summary += f" (Mã GD: {tx_id})"
     if sender and receiver:
@@ -24,15 +35,15 @@ def build_bank_transfer_summary(bank_data: dict, doc_result: dict) -> dict:
     if date:
         important_dates.append({
             "label": "Thời gian giao dịch",
-            "value": date,
-            "raw_value": date,
+            "value": str(date),
+            "raw_value": str(date),
             "source": "Màn hình chuyển khoản"
         })
 
     important_amounts = []
     if amt:
         important_amounts.append({
-            "label": "Số tiền chuyên khoản",
+            "label": "Số tiền chuyển khoản",
             "value": amt,
             "currency": "VND",
             "source": "Số tiền trên biên nhận"
@@ -52,7 +63,7 @@ def build_bank_transfer_summary(bank_data: dict, doc_result: dict) -> dict:
             "người_chuyển": sender,
             "người_nhận": receiver,
             "số_tiền": amt,
-            "nội_dung": bt_info.get("transfer_content", "")
+            "nội_dung": content
         },
         "important_dates": important_dates,
         "important_amounts": important_amounts,

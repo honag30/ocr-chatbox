@@ -21,13 +21,17 @@ def get_ocr_reader():
     """
     global _ocr_reader
     if _ocr_reader is None:
-        import easyocr
-        print("[System] Initializing EasyOCR Reader (vi, en) — CPU mode...")
-        _ocr_reader = easyocr.Reader(
-            ['vi', 'en'],
-            gpu=False,
-            verbose=False,
-        )
+        try:
+            import easyocr
+            print("[System] Initializing EasyOCR Reader (vi, en) — CPU mode...")
+            _ocr_reader = easyocr.Reader(
+                ['vi', 'en'],
+                gpu=False,
+                verbose=False,
+            )
+        except Exception as e:
+            print(f"[System] ⚠️ EasyOCR không khả dụng ({e}). Sẽ sử dụng Multimodal Vision OCR tự động.")
+            return None
     return _ocr_reader
 
 # ---------------------------------------------------------------------------
@@ -385,18 +389,104 @@ def read_xlsx(file_path: str) -> dict:
     }
 
 
+def read_image_with_vision_api(file_path: str) -> dict:
+    """
+    Sử dụng Multimodal Vision API (Gemini) để đọc trực tiếp chữ trong ảnh
+    khi EasyOCR gặp lỗi hệ thống / DLL block.
+    """
+    import base64
+    from openai import OpenAI
+    
+    print(f"  [Image Vision] Đang gọi Multimodal Vision API cho file: {os.path.basename(file_path)}")
+    ext = os.path.splitext(file_path)[1].lower()
+    mime_type = "image/png" if ext == ".png" else "image/jpeg"
+    if ext == ".webp":
+        mime_type = "image/webp"
+
+    with open(file_path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("utf-8")
+
+    raw_keys = os.getenv("GEMINI_API_KEY", "").split(",")
+    keys = [k.strip() for k in raw_keys if k.strip()]
+    model_name = os.getenv("MODEL_NAME", "gemini-3.6-flash")
+
+    prompt = (
+        "Hãy đọc toàn bộ văn bản có trong bức ảnh này một cách trung thực và chính xác nhất theo từng dòng. "
+        "Giữ nguyên các con số, mã giao dịch, tên người, số tiền, ngày giờ. Chỉ trả về nội dung văn bản trích xuất."
+    )
+
+    raw_text = ""
+    last_err = None
+    for k in keys:
+        try:
+            client = OpenAI(
+                api_key=k,
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+            )
+            resp = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64}"}}
+                        ]
+                    }
+                ]
+            )
+            raw_text = resp.choices[0].message.content.strip()
+            if raw_text:
+                break
+        except Exception as e:
+            last_err = e
+            print(f"  [Image Vision] Key '{k[:8]}...' gặp lỗi/hết quota: {e}. Đang chuyển key dự phòng...")
+            continue
+
+    if not raw_text:
+        print(f"  [Image Vision] ⚠️ Không thể đọc ảnh bằng Gemini Vision ({last_err}). Trả về văn bản trống.")
+        raw_text = ""
+    full_text = normalize_vietnamese_text(raw_text)
+    lines = [l.strip() for l in full_text.splitlines() if l.strip()]
+    confidences = [0.98] * len(lines)
+    elements = [classify_text_element(l) for l in lines]
+
+    return {
+        "document_type": "image",
+        "source_type": "image",
+        "extraction_method": "vision_ai",
+        "has_table": False,
+        "total_pages": 1,
+        "pages": [{
+            "page": 1,
+            "method": "vision_ai",
+            "confidence": 98.0,
+            "text": full_text,
+            "lines": lines,
+            "confidences": confidences,
+            "elements": elements,
+            "tables": []
+        }],
+        "full_text": full_text,
+        "tables": []
+    }
+
+
 def read_image(file_path: str) -> dict:
     """
     Đọc file ảnh (PNG, JPG, JPEG, WEBP, BMP):
     - Tiền xử lý ảnh thích ứng (Adaptive preprocessing)
-    - OCR với EasyOCR dùng greedy decoder
+    - OCR với EasyOCR dùng greedy decoder (Fallback sang Multimodal Vision nếu EasyOCR không khả dụng)
     - Phát hiện Bảng bằng OpenCV Morphology Grid & Spatial Clustering
     - Tự động fallback OCR ảnh gốc nếu ảnh qua xử lý cho kết quả kém
     """
     print(f"[Image] Processing & OCR: '{os.path.basename(file_path)}'")
-    processed_img = preprocess_image(file_path, fast_mode=True)
-
+    
     reader = get_ocr_reader()
+    if reader is None:
+        return read_image_with_vision_api(file_path)
+
+    processed_img = preprocess_image(file_path, fast_mode=True)
     raw_results = reader.readtext(
         processed_img,
         decoder=_OCR_PARAMS_CPU["decoder"],

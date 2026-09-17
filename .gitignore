@@ -61,6 +61,7 @@ storage/ocr_outputs/*
 storage/input/*
 !storage/input/.gitkeep
 output/
+uploads/
 
 # Archive & Legacy Backup Folders
 archive/

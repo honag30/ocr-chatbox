@@ -208,24 +208,24 @@ export default function Sidebar({
                   Đang quét danh sách file...
                 </div>
               ) : (
-                filesList.map((file, idx) => (
-                  <div 
-                    key={idx} 
-                    className={`file-item ${activeDoc?.original_filename === file.name ? 'active' : ''}`}
-                    onClick={() => onSelectFile(file.path)}
-                    title={`Click để tóm tắt: ${file.name}`}
-                  >
-                    <div className="file-info">
-                      {getFileBadge(file.extension)}
-                      <div>
-                        <div className="file-name">{file.name}</div>
-                        <div className="file-category">
-                          {file.category} • {(file.size / 1024).toFixed(0)} KB
+                  filesList.map((file, idx) => (
+                    <div 
+                      key={idx} 
+                      className={`file-item ${activeDoc?.original_filename === file.name ? 'active' : ''}`}
+                      onClick={() => onSelectFile(file)}
+                      title={`Click để tóm tắt: ${file.name}`}
+                    >
+                      <div className="file-info">
+                        {getFileBadge(file.extension)}
+                        <div>
+                          <div className="file-name">{file.name}</div>
+                          <div className="file-category">
+                            {file.category} • {file.size ? `${(file.size / 1024).toFixed(0)} KB` : 'Đã lưu CSDL'}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  ))
               )}
             </div>
           </div>
@@ -241,7 +241,7 @@ export default function Sidebar({
         <div className="system-status">
           <div className="status-indicator">
             <span className="status-dot"></span>
-            <span>Gemini 2.5 Flash + OCR</span>
+            <span>Gemini 3.6 Flash + OCR</span>
           </div>
           <span>Sẵn sàng</span>
         </div>

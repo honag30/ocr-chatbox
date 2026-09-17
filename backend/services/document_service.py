@@ -47,13 +47,13 @@ class DocumentService:
         if os.path.isfile(clean_path):
             return os.path.abspath(clean_path)
 
-        for base in [DOC_DIR, TEST_OCR_DIR]:
+        for base in [DOC_DIR, TEST_OCR_DIR, os.path.join(TEST_OCR_DIR, "archive", "test-chatbox", "doc")]:
             test_rel = os.path.join(base, clean_path)
             if os.path.isfile(test_rel):
                 return os.path.abspath(test_rel)
 
         target_name = os.path.basename(clean_path)
-        for search_root in [DOC_DIR]:
+        for search_root in [DOC_DIR, os.path.join(TEST_OCR_DIR, "archive")]:
             if os.path.exists(search_root):
                 for root, _, files in os.walk(search_root):
                     if target_name in files:
@@ -129,29 +129,30 @@ class DocumentService:
             except Exception as db_err:
                 print(f"[DocumentService] Lưu DB thất bại hoặc chưa bật ({db_err}).")
 
-            if not db_saved and save_ocr_output:
+            # Luôn xuất file ra thư mục output (bao gồm JSON tinh gọn KIE và TXT)
+            if save_ocr_output:
                 save_ocr_output(filename, category, doc_result, eval_report)
         except Exception as e:
             print(f"[DocumentService] Không thể lưu output OCR: {e}")
 
     def process_file_pipeline(self, file_source, filename: str) -> dict:
         """Luồng lưu file trực tiếp vào storage/doc/, phân loại, bóc tách và lưu DB."""
-        doc_dir = DOC_DIR
-        os.makedirs(doc_dir, exist_ok=True)
+        upload_dir = UPLOAD_DIR
+        os.makedirs(upload_dir, exist_ok=True)
 
-        temp_file_path = os.path.join(doc_dir, f"_temp_{filename}")
+        target_doc_path = os.path.join(upload_dir, filename)
 
         if isinstance(file_source, bytes):
-            with open(temp_file_path, "wb") as f:
+            with open(target_doc_path, "wb") as f:
                 f.write(file_source)
         elif hasattr(file_source, "read"):
-            with open(temp_file_path, "wb") as buffer:
+            with open(target_doc_path, "wb") as buffer:
                 shutil.copyfileobj(file_source, buffer)
         elif isinstance(file_source, str) and os.path.isfile(file_source):
-            if os.path.abspath(file_source) != os.path.abspath(temp_file_path):
-                shutil.copy2(file_source, temp_file_path)
+            if os.path.abspath(file_source) != os.path.abspath(target_doc_path):
+                shutil.copy2(file_source, target_doc_path)
 
-        file_hash = self.calculate_file_hash(temp_file_path)
+        file_hash = self.calculate_file_hash(target_doc_path)
 
         if file_hash:
             try:
@@ -162,28 +163,13 @@ class DocumentService:
 
                 existing_doc = get_ocr_document_by_hash(file_hash)
                 if existing_doc and existing_doc.get("ocr_data_json"):
-                    print(f"[DocumentService] ⚡ File '{filename}' đã tồn tại trong CSDL (SHA-256: {file_hash[:12]}...). Tái sử dụng kết quả OCR!")
+                    print(f"[DocumentService] ⚡ File '{filename}' đã tồn tại trong CSDL (SHA-256: {file_hash[:12]}...). Tái sử dụng kết quả OCR từ Database!")
                     doc_result = existing_doc["ocr_data_json"]
                     doc_result["file_hash"] = file_hash
-
-                    category = existing_doc.get("category") or doc_result.get("category", "khac")
-                    target_category_dir = os.path.join(doc_dir, category)
-                    os.makedirs(target_category_dir, exist_ok=True)
-                    target_doc_path = os.path.join(target_category_dir, filename)
-
-                    if os.path.exists(temp_file_path):
-                        if os.path.exists(target_doc_path) and os.path.abspath(temp_file_path) != os.path.abspath(target_doc_path):
-                            try:
-                                os.remove(target_doc_path)
-                            except Exception:
-                                pass
-                        shutil.move(temp_file_path, target_doc_path)
-
-                    final_path = os.path.abspath(target_doc_path) if os.path.exists(target_doc_path) else existing_doc.get("file_path", doc_result.get("file_path"))
-                    doc_result["file_path"] = final_path
+                    doc_result["file_path"] = target_doc_path
                     doc_result["original_filename"] = filename
+                    category = existing_doc.get("category") or doc_result.get("category", "khac")
                     doc_result["category"] = category
-
                     self._save_ocr_output_to_test_ocr(filename, category, doc_result)
                     return doc_result
             except Exception as db_err:
@@ -193,24 +179,12 @@ class DocumentService:
         cat_conf = 50.0
         if classify_document:
             try:
-                cat_res, conf_res = classify_document(temp_file_path)
+                cat_res, conf_res = classify_document(target_doc_path)
                 if cat_res:
                     category = cat_res
                     cat_conf = conf_res
             except Exception as e:
                 print(f"[DocumentService] Lỗi khi phân loại tài liệu '{filename}': {e}")
-
-        target_category_dir = os.path.join(doc_dir, category)
-        os.makedirs(target_category_dir, exist_ok=True)
-        target_doc_path = os.path.join(target_category_dir, filename)
-
-        if os.path.exists(temp_file_path):
-            if os.path.exists(target_doc_path) and os.path.abspath(temp_file_path) != os.path.abspath(target_doc_path):
-                try:
-                    os.remove(target_doc_path)
-                except Exception:
-                    pass
-            shutil.move(temp_file_path, target_doc_path)
 
         doc_result = self.process_file(target_doc_path)
         doc_result["category"] = category
@@ -218,6 +192,7 @@ class DocumentService:
         if file_hash:
             doc_result["file_hash"] = file_hash
 
+        # Lưu trực tiếp toàn bộ kết quả vào MySQL Database
         self._save_ocr_output_to_test_ocr(filename, category, doc_result)
 
         return doc_result

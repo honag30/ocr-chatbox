@@ -41,12 +41,7 @@ class ChatService:
         """Xử lý file từ đường dẫn."""
         real_path = self.doc_service.resolve_file_path(file_path)
         filename = os.path.basename(real_path)
-
-        if "storage" in real_path and os.path.sep + "doc" + os.path.sep in real_path:
-            doc_result = self.doc_service.process_file(real_path)
-        else:
-            doc_result = self.doc_service.process_file_pipeline(real_path, filename)
-
+        doc_result = self.doc_service.process_file_pipeline(real_path, filename)
         return self._summarize_and_save_context(doc_result, user_instruction)
 
     def _summarize_and_save_context(self, doc_result: dict, user_instruction: str = None) -> tuple[str, dict]:
@@ -75,6 +70,35 @@ class ChatService:
         self.last_doc_result = doc_result
 
         return summary, doc_result
+
+    def load_document_from_db(self, doc_record: dict, user_instruction: str = None) -> tuple[str, dict]:
+        """Tải tài liệu đã lưu trong CSDL MySQL vào ngữ cảnh phiên chat hiện tại và tóm tắt."""
+        import json
+        ocr_data = doc_record.get("ocr_data_json") or {}
+        if isinstance(ocr_data, str):
+            try:
+                ocr_data = json.loads(ocr_data)
+            except Exception:
+                ocr_data = {}
+
+        file_name = doc_record.get("file_name", "Tài liệu")
+        category = doc_record.get("category", "unclassified")
+        full_text = doc_record.get("extracted_text", "")
+
+        doc_result = {
+            "original_filename": file_name,
+            "file_path": doc_record.get("file_path", ""),
+            "document_type": category,
+            "category": category,
+            "full_text": full_text,
+            "ocr_data_json": ocr_data,
+            "data": ocr_data.get("data", {}) if isinstance(ocr_data, dict) else {},
+            "tables": [],
+            "total_pages": ocr_data.get("file_metadata", {}).get("total_pages", 1) if isinstance(ocr_data, dict) else 1,
+            "extraction_method": "database_cache",
+            "status": "success"
+        }
+        return self._summarize_and_save_context(doc_result, user_instruction)
 
     def switch_session(self, session_id: str):
         """Chuyển sang phiên trò chuyện khác."""
