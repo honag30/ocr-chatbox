@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { 
   Sparkles, 
   UploadCloud, 
@@ -10,8 +10,19 @@ import {
   FolderOpen,
   Plus,
   Layers,
-  FileText
+  User,
+  Users,
+  ChevronDown,
+  Check,
+  ArrowRight
 } from 'lucide-react';
+
+const PRESET_USERS = [
+  { id: 'user_1', name: 'User 1 (Admin)', role: 'Quản trị viên' },
+  { id: 'user_2', name: 'User 2 (Kế toán)', role: 'Tài chính - Kế toán' },
+  { id: 'user_3', name: 'User 3 (Nhân sự)', role: 'Phòng Nhân sự' },
+  { id: 'default_user', name: 'Default User', role: 'Người dùng mặc định' },
+];
 
 export default function Sidebar({ 
   collapsed, 
@@ -30,9 +41,13 @@ export default function Sidebar({
   isUploading,
   activeDoc,
   theme,
-  onToggleTheme
+  onToggleTheme,
+  userId = 'user_1',
+  onSwitchUser
 }) {
   const fileInputRef = useRef(null);
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const [customUserIdInput, setCustomUserIdInput] = useState('');
 
   const getFileBadge = (ext) => {
     switch (ext) {
@@ -66,6 +81,28 @@ export default function Sidebar({
     }
   };
 
+  const currentUserObj = PRESET_USERS.find(u => u.id === userId) || {
+    id: userId,
+    name: `User (${userId})`,
+    role: 'Tùy chỉnh'
+  };
+
+  const handleSelectUser = (id) => {
+    if (onSwitchUser) {
+      onSwitchUser(id);
+    }
+    setShowUserDropdown(false);
+  };
+
+  const handleApplyCustomUser = (e) => {
+    e.preventDefault();
+    if (customUserIdInput.trim() && onSwitchUser) {
+      onSwitchUser(customUserIdInput.trim());
+      setCustomUserIdInput('');
+      setShowUserDropdown(false);
+    }
+  };
+
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
       {/* Header */}
@@ -91,6 +128,65 @@ export default function Sidebar({
             <ChevronLeft size={18} />
           </button>
         </div>
+      </div>
+
+      {/* User Switcher Bar */}
+      <div className="user-profile-section">
+        <div 
+          className="user-profile-badge" 
+          onClick={() => setShowUserDropdown(!showUserDropdown)}
+          title="Bấm để đổi người dùng (User ID)"
+        >
+          <div className="user-avatar">
+            <User size={14} />
+          </div>
+          <div className="user-details">
+            <div className="user-name">{currentUserObj.name}</div>
+            <div className="user-subtext">ID: <code>{userId}</code></div>
+          </div>
+          <ChevronDown size={14} className={`user-dropdown-arrow ${showUserDropdown ? 'open' : ''}`} />
+        </div>
+
+        {showUserDropdown && (
+          <div className="user-dropdown-menu">
+            <div className="user-dropdown-header">
+              <Users size={13} />
+              <span>Chọn tài khoản người dùng</span>
+            </div>
+            
+            <div className="user-list">
+              {PRESET_USERS.map((u) => (
+                <div 
+                  key={u.id} 
+                  className={`user-list-item ${userId === u.id ? 'active' : ''}`}
+                  onClick={() => handleSelectUser(u.id)}
+                >
+                  <div className="user-avatar small">
+                    <User size={12} />
+                  </div>
+                  <div className="user-list-info">
+                    <div className="user-list-name">{u.name}</div>
+                    <div className="user-list-role">{u.role} (<code>{u.id}</code>)</div>
+                  </div>
+                  {userId === u.id && <Check size={14} className="user-checked-icon" />}
+                </div>
+              ))}
+            </div>
+
+            <form onSubmit={handleApplyCustomUser} className="custom-user-form">
+              <input 
+                type="text" 
+                placeholder="Nhập User ID khác..."
+                value={customUserIdInput}
+                onChange={(e) => setCustomUserIdInput(e.target.value)}
+                className="custom-user-input"
+              />
+              <button type="submit" className="custom-user-submit" title="Chuyển sang User ID này">
+                <ArrowRight size={13} />
+              </button>
+            </form>
+          </div>
+        )}
       </div>
 
       {/* 2 Tabs Header */}
@@ -123,13 +219,13 @@ export default function Sidebar({
 
             <div className="section-label" style={{ marginTop: '12px' }}>
               <MessageSquare size={13} />
-              <span>Các cuộc trò chuyện gần đây</span>
+              <span>Cuộc trò chuyện của {userId} ({sessions.length})</span>
             </div>
 
             <div className="sidebar-scroll-list">
               {sessions.length === 0 ? (
                 <div className="sidebar-empty-state">
-                  Chưa có lịch sử trò chuyện nào
+                  Chưa có lịch sử trò chuyện nào cho <strong>{userId}</strong>
                 </div>
               ) : (
                 sessions.map((sess) => (
@@ -171,7 +267,7 @@ export default function Sidebar({
             <div style={{ marginBottom: '12px' }}>
               <div className="section-label">
                 <UploadCloud size={13} />
-                <span>Tải lên tài liệu mới</span>
+                <span>Tải lên tài liệu cho {userId}</span>
               </div>
               <div 
                 className="upload-action-box" 
@@ -199,13 +295,13 @@ export default function Sidebar({
             {/* Server Files List */}
             <div className="section-label">
               <Layers size={13} />
-              <span>Tài liệu trên Server ({filesList.length})</span>
+              <span>Tài liệu của {userId} ({filesList.length})</span>
             </div>
 
             <div className="sidebar-scroll-list">
               {filesList.length === 0 ? (
                 <div className="sidebar-empty-state">
-                  Đang quét danh sách file...
+                  Chưa có tài liệu nào thuộc về <strong>{userId}</strong>
                 </div>
               ) : (
                   filesList.map((file, idx) => (
@@ -243,7 +339,7 @@ export default function Sidebar({
             <span className="status-dot"></span>
             <span>Gemini 3.6 Flash + OCR</span>
           </div>
-          <span>Sẵn sàng</span>
+          <span>User: {userId}</span>
         </div>
       </div>
     </aside>

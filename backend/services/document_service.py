@@ -77,8 +77,9 @@ class DocumentService:
             print(f"[DocumentService] Lỗi khi tính hash: {e}")
             return None
 
-    def _save_ocr_output_to_test_ocr(self, filename: str, category: str, doc_result: dict):
-        """Lưu kết quả trích xuất vào CSDL MySQL (chống lưu trùng) hoặc output."""
+    def _save_ocr_output_to_test_ocr(self, filename: str, category: str, doc_result: dict, user_id: str = "default_user"):
+        """Lưu kết quả trích xuất vào CSDL MySQL (chống lưu trùng) hoặc output theo user_id."""
+        user_id = user_id or "default_user"
         try:
             full_text = doc_result.get("full_text", "")
             lines = [l for l in full_text.splitlines() if l.strip()]
@@ -121,11 +122,12 @@ class DocumentService:
                     extracted_text=full_text,
                     ocr_data_json=doc_result,
                     eval_report=eval_report,
-                    status="completed"
+                    status="completed",
+                    user_id=user_id
                 )
                 if doc_id:
                     db_saved = True
-                    print(f"[DocumentService] ✅ Đã lưu/cập nhật kết quả OCR vào MySQL Database (ID: {doc_id}).")
+                    print(f"[DocumentService] ✅ Đã lưu/cập nhật kết quả OCR vào MySQL Database (ID: {doc_id}, User: {user_id}).")
             except Exception as db_err:
                 print(f"[DocumentService] Lưu DB thất bại hoặc chưa bật ({db_err}).")
 
@@ -135,8 +137,9 @@ class DocumentService:
         except Exception as e:
             print(f"[DocumentService] Không thể lưu output OCR: {e}")
 
-    def process_file_pipeline(self, file_source, filename: str) -> dict:
-        """Luồng lưu file trực tiếp vào storage/doc/, phân loại, bóc tách và lưu DB."""
+    def process_file_pipeline(self, file_source, filename: str, user_id: str = "default_user") -> dict:
+        """Luồng lưu file trực tiếp vào storage/doc/, phân loại, bóc tách và lưu DB theo user_id."""
+        user_id = user_id or "default_user"
         upload_dir = UPLOAD_DIR
         os.makedirs(upload_dir, exist_ok=True)
 
@@ -161,16 +164,16 @@ class DocumentService:
                 except ImportError:
                     from backend.db import get_ocr_document_by_hash
 
-                existing_doc = get_ocr_document_by_hash(file_hash)
+                existing_doc = get_ocr_document_by_hash(file_hash, user_id=user_id)
                 if existing_doc and existing_doc.get("ocr_data_json"):
-                    print(f"[DocumentService] ⚡ File '{filename}' đã tồn tại trong CSDL (SHA-256: {file_hash[:12]}...). Tái sử dụng kết quả OCR từ Database!")
+                    print(f"[DocumentService] ⚡ File '{filename}' đã tồn tại trong CSDL cho user '{user_id}' (SHA-256: {file_hash[:12]}...). Tái sử dụng kết quả OCR từ Database!")
                     doc_result = existing_doc["ocr_data_json"]
                     doc_result["file_hash"] = file_hash
                     doc_result["file_path"] = target_doc_path
                     doc_result["original_filename"] = filename
                     category = existing_doc.get("category") or doc_result.get("category", "khac")
                     doc_result["category"] = category
-                    self._save_ocr_output_to_test_ocr(filename, category, doc_result)
+                    self._save_ocr_output_to_test_ocr(filename, category, doc_result, user_id=user_id)
                     return doc_result
             except Exception as db_err:
                 print(f"[DocumentService] Lỗi khi tra cứu DB cache: {db_err}")
@@ -186,19 +189,20 @@ class DocumentService:
             except Exception as e:
                 print(f"[DocumentService] Lỗi khi phân loại tài liệu '{filename}': {e}")
 
-        doc_result = self.process_file(target_doc_path)
+        doc_result = self.process_file(target_doc_path, user_id=user_id)
         doc_result["category"] = category
         doc_result["category_confidence"] = cat_conf
         if file_hash:
             doc_result["file_hash"] = file_hash
 
         # Lưu trực tiếp toàn bộ kết quả vào MySQL Database
-        self._save_ocr_output_to_test_ocr(filename, category, doc_result)
+        self._save_ocr_output_to_test_ocr(filename, category, doc_result, user_id=user_id)
 
         return doc_result
 
-    def process_file(self, file_path: str) -> dict:
+    def process_file(self, file_path: str, user_id: str = "default_user") -> dict:
         """Đọc và trích xuất dữ liệu từ file."""
+        user_id = user_id or "default_user"
         real_path = self.resolve_file_path(file_path)
         filename = os.path.basename(real_path)
         ext = os.path.splitext(real_path)[1].lower()
@@ -214,16 +218,16 @@ class DocumentService:
                 except ImportError:
                     from backend.db import get_ocr_document_by_hash
 
-                existing_doc = get_ocr_document_by_hash(file_hash)
+                existing_doc = get_ocr_document_by_hash(file_hash, user_id=user_id)
                 if existing_doc and existing_doc.get("ocr_data_json"):
-                    print(f"[DocumentService] ⚡ File '{filename}' đã có kết quả OCR trong CSDL (SHA-256: {file_hash[:12]}...). Bỏ qua xử lý lại!")
+                    print(f"[DocumentService] ⚡ File '{filename}' đã có kết quả OCR trong CSDL cho user '{user_id}' (SHA-256: {file_hash[:12]}...). Bỏ qua xử lý lại!")
                     doc_result = existing_doc["ocr_data_json"]
                     doc_result["file_hash"] = file_hash
                     doc_result["file_path"] = real_path
                     doc_result["original_filename"] = filename
                     if existing_doc.get("category"):
                         doc_result["category"] = existing_doc["category"]
-                    self._save_ocr_output_to_test_ocr(filename, doc_result.get("category", "khac"), doc_result)
+                    self._save_ocr_output_to_test_ocr(filename, doc_result.get("category", "khac"), doc_result, user_id=user_id)
                     return doc_result
             except Exception as db_err:
                 print(f"[DocumentService] Cảnh báo tra cứu cache DB: {db_err}")
@@ -266,7 +270,7 @@ class DocumentService:
                 category = "khac"
 
         if category:
-            self._save_ocr_output_to_test_ocr(filename, category, doc_result)
+            self._save_ocr_output_to_test_ocr(filename, category, doc_result, user_id=user_id)
 
         return doc_result
 

@@ -1,6 +1,6 @@
 import os
 from typing import Optional
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, Header, Query, HTTPException
 from pydantic import BaseModel
 
 try:
@@ -26,15 +26,24 @@ class SelectFileRequest(BaseModel):
     doc_id: Optional[int] = None
     file_name: Optional[str] = None
     instruction: Optional[str] = None
+    user_id: Optional[str] = None
+    actor_id: Optional[str] = None
+    session_id: Optional[str] = None
 
 
 @router.post("/api/upload")
 async def upload_document(
     file: UploadFile = File(...),
-    instruction: Optional[str] = Form(None)
+    instruction: Optional[str] = Form(None),
+    user_id: Optional[str] = Form(None),
+    actor_id: Optional[str] = Form(None),
+    session_id: Optional[str] = Form(None),
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_actor_id: Optional[str] = Header(None, alias="X-Actor-Id")
 ):
-    """Tải lên file, xử lý OCR, trích xuất JSON tinh gọn và lưu trực tiếp vào CSDL."""
+    """Tải lên file, xử lý OCR, trích xuất JSON tinh gọn và lưu trực tiếp vào CSDL theo user_id / actor_id."""
     try:
+        uid = str(user_id or actor_id or x_user_id or x_actor_id or "default_user")
         filename = file.filename
         ext = os.path.splitext(filename)[1].lower()
         if ext not in SUPPORTED_EXTENSIONS:
@@ -46,12 +55,17 @@ async def upload_document(
         summary, doc_result = chat_service.upload_and_summarize_stream(
             file.file,
             filename,
-            user_instruction=instruction
+            user_instruction=instruction,
+            user_id=uid,
+            session_id=session_id
         )
 
         return {
             "status": "success",
             "filename": filename,
+            "user_id": uid,
+            "actor_id": uid,
+            "session_id": chat_service.memory.session_id,
             "summary": summary,
             "doc_result": doc_result,
             "messages": chat_service.memory.get_messages()
@@ -61,9 +75,14 @@ async def upload_document(
 
 
 @router.post("/api/select-file")
-def select_existing_file(request: SelectFileRequest):
-    """Chọn tài liệu đã lưu trong CSDL để phân tích / hỏi đáp."""
+def select_existing_file(
+    request: SelectFileRequest,
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_actor_id: Optional[str] = Header(None, alias="X-Actor-Id")
+):
+    """Chọn tài liệu đã lưu trong CSDL để phân tích / hỏi đáp theo user_id / actor_id."""
     try:
+        uid = str(request.user_id or request.actor_id or x_user_id or x_actor_id or "default_user")
         doc = None
         # 1. Tra cứu theo ID (doc_id, file_id hoặc file_path dạng số)
         target_id = request.doc_id or request.file_id
@@ -71,23 +90,28 @@ def select_existing_file(request: SelectFileRequest):
             target_id = int(request.file_path.strip())
 
         if target_id:
-            doc = get_ocr_document_by_id(target_id)
+            doc = get_ocr_document_by_id(target_id, user_id=uid) or get_ocr_document_by_id(target_id)
 
         # 2. Nếu chưa tìm thấy, tra cứu theo tên file
         if not doc:
             target_name = request.file_name or (os.path.basename(request.file_path) if request.file_path else None)
             if target_name:
-                doc = get_ocr_document_by_name(target_name)
+                doc = get_ocr_document_by_name(target_name, user_id=uid) or get_ocr_document_by_name(target_name)
 
         # Nếu tìm thấy trong CSDL MySQL, tải trực tiếp dữ liệu từ DB (không cần đọc ổ đĩa)
         if doc:
             summary, doc_result = chat_service.load_document_from_db(
                 doc,
-                user_instruction=request.instruction
+                user_instruction=request.instruction,
+                user_id=uid,
+                session_id=request.session_id
             )
             return {
                 "status": "success",
                 "filename": doc.get("file_name", "Tài liệu"),
+                "user_id": uid,
+                "actor_id": uid,
+                "session_id": chat_service.memory.session_id,
                 "summary": summary,
                 "doc_result": doc_result,
                 "messages": chat_service.memory.get_messages()
@@ -97,11 +121,16 @@ def select_existing_file(request: SelectFileRequest):
         if request.file_path and os.path.exists(request.file_path):
             summary, doc_result = chat_service.upload_and_summarize(
                 request.file_path,
-                user_instruction=request.instruction
+                user_instruction=request.instruction,
+                user_id=uid,
+                session_id=request.session_id
             )
             return {
                 "status": "success",
                 "filename": doc_result.get("original_filename", os.path.basename(request.file_path)),
+                "user_id": uid,
+                "actor_id": uid,
+                "session_id": chat_service.memory.session_id,
                 "summary": summary,
                 "doc_result": doc_result,
                 "messages": chat_service.memory.get_messages()
@@ -119,17 +148,25 @@ def select_existing_file(request: SelectFileRequest):
 
 
 @router.get("/api/files")
-def list_available_files():
-    """Lấy danh sách toàn bộ tài liệu đã xử lý lưu trong MySQL Database."""
+def list_available_files(
+    user_id: Optional[str] = Query(None),
+    actor_id: Optional[str] = Query(None),
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_actor_id: Optional[str] = Header(None, alias="X-Actor-Id")
+):
+    """Lấy danh sách toàn bộ tài liệu đã xử lý lưu trong MySQL Database của user_id / actor_id."""
+    uid = str(user_id or actor_id or x_user_id or x_actor_id or "default_user")
     file_list = []
     try:
-        docs = get_all_ocr_documents(limit=500)
+        docs = get_all_ocr_documents(user_id=uid, limit=500)
         for d in docs:
             fname = d.get("file_name") or "document"
             ext = d.get("file_type") or os.path.splitext(fname)[1].lower() or ".pdf"
             size = d.get("file_size") or 1024
             file_list.append({
                 "id": d.get("id"),
+                "user_id": d.get("user_id"),
+                "actor_id": d.get("user_id"),
                 "name": fname,
                 "path": str(d.get("id")),
                 "size": size,
@@ -143,18 +180,29 @@ def list_available_files():
 
     return {
         "status": "success",
+        "user_id": uid,
+        "actor_id": uid,
         "total": len(file_list),
         "files": file_list
     }
 
 
 @router.get("/api/documents/{doc_id}")
-def get_document_detail(doc_id: int):
-    """Lấy chi tiết kết quả trích xuất JSON tinh gọn từ Database theo ID."""
-    doc = get_ocr_document_by_id(doc_id)
+def get_document_detail(
+    doc_id: int,
+    user_id: Optional[str] = Query(None),
+    actor_id: Optional[str] = Query(None),
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_actor_id: Optional[str] = Header(None, alias="X-Actor-Id")
+):
+    """Lấy chi tiết kết quả trích xuất JSON tinh gọn từ Database theo ID và user_id / actor_id."""
+    uid = str(user_id or actor_id or x_user_id or x_actor_id or "default_user")
+    doc = get_ocr_document_by_id(doc_id, user_id=uid) or get_ocr_document_by_id(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail=f"Không tìm thấy tài liệu ID: {doc_id}")
     return {
         "status": "success",
+        "user_id": uid,
+        "actor_id": uid,
         "document": doc
     }

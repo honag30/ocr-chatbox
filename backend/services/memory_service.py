@@ -12,21 +12,29 @@ except ImportError:
 
 
 class ChatMemory:
-    def __init__(self, session_id: str = "default_session"):
+    def __init__(self, session_id: str = "default_session", user_id: str = "default_user"):
         self.session_id = session_id
+        self.user_id = user_id or "default_user"
         self.messages = []
         self.load_history()
 
     def load_history(self):
         self.messages = []
         if get_chat_history:
-            history = get_chat_history(self.session_id)
+            history = get_chat_history(self.session_id, user_id=self.user_id)
             if history:
                 self.messages = history
 
-    def switch_session(self, new_session_id: str):
+    def switch_session(self, new_session_id: str, new_user_id: str = None):
         self.session_id = new_session_id
+        if new_user_id:
+            self.user_id = new_user_id
         self.load_history()
+
+    def set_user_id(self, user_id: str):
+        if user_id and user_id != self.user_id:
+            self.user_id = user_id
+            self.load_history()
 
     def add_user_message(self, content: str, display_content: str = None, doc_result: dict = None):
         is_first_msg = (len(self.messages) == 0)
@@ -47,7 +55,7 @@ class ChatMemory:
             if len(clean_title) > 40:
                 clean_title = clean_title[:40] + "..."
             if clean_title:
-                update_session_title(self.session_id, clean_title)
+                update_session_title(self.session_id, clean_title, user_id=self.user_id)
 
         if save_chat_message:
             save_chat_message(
@@ -55,7 +63,8 @@ class ChatMemory:
                 role="user",
                 content=content,
                 display_content=display_content,
-                doc_result_json=doc_result
+                doc_result_json=doc_result,
+                user_id=self.user_id
             )
 
     def add_assistant_message(self, content: str, doc_result: dict = None):
@@ -72,7 +81,8 @@ class ChatMemory:
                 session_id=self.session_id,
                 role="assistant",
                 content=content,
-                doc_result_json=doc_result
+                doc_result_json=doc_result,
+                user_id=self.user_id
             )
 
     def get_messages(self):
@@ -81,4 +91,4 @@ class ChatMemory:
     def clear(self):
         self.messages = []
         if clear_session_messages:
-            clear_session_messages(self.session_id)
+            clear_session_messages(self.session_id, user_id=self.user_id)

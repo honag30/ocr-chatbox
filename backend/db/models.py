@@ -7,16 +7,19 @@ CREATE_TABLES_SQL = [
     """
     CREATE TABLE IF NOT EXISTS chat_sessions (
         id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL DEFAULT 'default_user',
         session_id VARCHAR(64) UNIQUE NOT NULL,
         title VARCHAR(255) DEFAULT 'New Chat',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_user_id (user_id),
         INDEX idx_session_id (session_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     """,
     """
     CREATE TABLE IF NOT EXISTS ocr_documents (
         id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL DEFAULT 'default_user',
         file_name VARCHAR(255) NOT NULL,
         file_path TEXT NOT NULL,
         file_size BIGINT DEFAULT 0,
@@ -29,6 +32,7 @@ CREATE_TABLES_SQL = [
         status VARCHAR(20) DEFAULT 'completed',
         error_message TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_doc_user (user_id),
         INDEX idx_category (category),
         INDEX idx_file_name (file_name),
         INDEX idx_file_hash (file_hash)
@@ -38,12 +42,14 @@ CREATE_TABLES_SQL = [
     CREATE TABLE IF NOT EXISTS chat_messages (
         id INT AUTO_INCREMENT PRIMARY KEY,
         session_id VARCHAR(64) NOT NULL,
+        user_id VARCHAR(64) DEFAULT 'default_user',
         role ENUM('user', 'assistant', 'system') NOT NULL,
         content LONGTEXT NOT NULL,
         display_content LONGTEXT,
         document_id INT DEFAULT NULL,
         doc_result_json LONGTEXT DEFAULT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_msg_user (user_id),
         INDEX idx_msg_session (session_id),
         FOREIGN KEY (session_id) REFERENCES chat_sessions(session_id) ON DELETE CASCADE,
         FOREIGN KEY (document_id) REFERENCES ocr_documents(id) ON DELETE SET NULL
@@ -91,7 +97,22 @@ def init_db():
             for query in CREATE_TABLES_SQL:
                 cur.execute(query)
             
-            # Migration check
+            # Migration checks for user_id and file_hash
+            cur.execute("SHOW COLUMNS FROM chat_sessions LIKE 'user_id';")
+            if not cur.fetchone():
+                cur.execute("ALTER TABLE chat_sessions ADD COLUMN user_id VARCHAR(64) NOT NULL DEFAULT 'default_user' AFTER id;")
+                cur.execute("ALTER TABLE chat_sessions ADD INDEX idx_user_id (user_id);")
+
+            cur.execute("SHOW COLUMNS FROM ocr_documents LIKE 'user_id';")
+            if not cur.fetchone():
+                cur.execute("ALTER TABLE ocr_documents ADD COLUMN user_id VARCHAR(64) NOT NULL DEFAULT 'default_user' AFTER id;")
+                cur.execute("ALTER TABLE ocr_documents ADD INDEX idx_doc_user (user_id);")
+
+            cur.execute("SHOW COLUMNS FROM chat_messages LIKE 'user_id';")
+            if not cur.fetchone():
+                cur.execute("ALTER TABLE chat_messages ADD COLUMN user_id VARCHAR(64) DEFAULT 'default_user' AFTER session_id;")
+                cur.execute("ALTER TABLE chat_messages ADD INDEX idx_msg_user (user_id);")
+
             cur.execute("SHOW COLUMNS FROM ocr_documents LIKE 'file_hash';")
             if not cur.fetchone():
                 cur.execute("ALTER TABLE ocr_documents ADD COLUMN file_hash VARCHAR(64) DEFAULT NULL AFTER file_type;")

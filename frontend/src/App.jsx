@@ -35,6 +35,7 @@ function extractErrorMessage(data, fallback = 'Đã xảy ra lỗi từ hệ th�
 
 export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
+  const [userId, setUserId] = useState(() => localStorage.getItem('actor_id') || localStorage.getItem('user_id') || '2153');
   const [activeTab, setActiveTab] = useState('history'); // 'history' | 'files'
   const [sessions, setSessions] = useState([]);
   const [currentSessionId, setCurrentSessionId] = useState(null);
@@ -57,16 +58,22 @@ export default function App() {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
 
-  // Fetch initial history, sessions and files list
+  // Fetch initial history, sessions and files list when userId changes
   useEffect(() => {
-    fetchFiles();
-    fetchSessions();
-    fetchHistory();
-  }, []);
+    localStorage.setItem('user_id', userId);
+    fetchFiles(userId);
+    fetchSessions(userId);
+    fetchHistory(userId);
+  }, [userId]);
 
-  const fetchFiles = async () => {
+  const fetchFiles = async (targetUser = userId) => {
     try {
-      const res = await fetch('/api/files');
+      const res = await fetch(`/api/files?actor_id=${encodeURIComponent(targetUser)}&user_id=${encodeURIComponent(targetUser)}`, {
+        headers: { 
+          'X-User-Id': targetUser,
+          'X-Actor-Id': targetUser
+        }
+      });
       const data = await res.json();
       if (data.status === 'success') {
         setFilesList(data.files || []);
@@ -76,9 +83,14 @@ export default function App() {
     }
   };
 
-  const fetchSessions = async () => {
+  const fetchSessions = async (targetUser = userId) => {
     try {
-      const res = await fetch('/api/sessions');
+      const res = await fetch(`/api/sessions?actor_id=${encodeURIComponent(targetUser)}&user_id=${encodeURIComponent(targetUser)}`, {
+        headers: { 
+          'X-User-Id': targetUser,
+          'X-Actor-Id': targetUser
+        }
+      });
       const data = await res.json();
       if (data.status === 'success') {
         setSessions(data.sessions || []);
@@ -91,9 +103,20 @@ export default function App() {
     }
   };
 
-  const fetchHistory = async () => {
+  const fetchHistory = async (targetUser = userId, sessionId = null) => {
     try {
-      const res = await fetch('/api/history');
+      const params = new URLSearchParams({ 
+        actor_id: targetUser,
+        user_id: targetUser 
+      });
+      if (sessionId) params.append('session_id', sessionId);
+      
+      const res = await fetch(`/api/history?${params.toString()}`, {
+        headers: { 
+          'X-User-Id': targetUser,
+          'X-Actor-Id': targetUser
+        }
+      });
       const data = await res.json();
       if (data.status === 'success') {
         if (data.session_id) {
@@ -110,14 +133,22 @@ export default function App() {
               time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             }))
           );
+        } else {
+          setMessages([]);
         }
-        if (data.active_doc) {
-          setActiveDoc(data.active_doc);
-        }
+        setActiveDoc(data.active_doc || null);
       }
     } catch (err) {
       console.error('Lỗi khi tải lịch sử:', err);
     }
+  };
+
+  const handleSwitchUser = (newUserId) => {
+    if (!newUserId || newUserId === userId) return;
+    setUserId(newUserId);
+    setMessages([]);
+    setActiveDoc(null);
+    setInspectorDoc(null);
   };
 
   const handleSelectSession = async (sessionId) => {
@@ -125,8 +156,11 @@ export default function App() {
     try {
       const res = await fetch('/api/sessions/switch', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId }),
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-User-Id': userId
+        },
+        body: JSON.stringify({ session_id: sessionId, user_id: userId }),
       });
       const data = await res.json();
       if (data.status === 'success') {
@@ -150,14 +184,21 @@ export default function App() {
 
   const handleCreateNewSession = async () => {
     try {
-      const res = await fetch('/api/sessions', { method: 'POST' });
+      const res = await fetch('/api/sessions', { 
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-User-Id': userId
+        },
+        body: JSON.stringify({ title: 'Cuộc trò chuyện mới', user_id: userId })
+      });
       const data = await res.json();
       if (data.status === 'success') {
         setCurrentSessionId(data.session_id);
         setMessages([]);
         setActiveDoc(null);
         setInspectorDoc(null);
-        fetchSessions();
+        fetchSessions(userId);
       }
     } catch (err) {
       console.error('Lỗi khi tạo phiên chat mới:', err);
@@ -166,7 +207,10 @@ export default function App() {
 
   const handleDeleteSession = async (sessionId) => {
     try {
-      const res = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/sessions/${sessionId}?user_id=${encodeURIComponent(userId)}`, { 
+        method: 'DELETE',
+        headers: { 'X-User-Id': userId }
+      });
       const data = await res.json();
       if (data.status === 'success') {
         setSessions(data.sessions || []);
@@ -183,6 +227,9 @@ export default function App() {
             }))
           );
           setActiveDoc(data.active_doc || null);
+        } else {
+          setMessages([]);
+          setActiveDoc(null);
         }
       }
     } catch (err) {
@@ -205,8 +252,17 @@ export default function App() {
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text }),
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-User-Id': userId,
+          'X-Actor-Id': userId
+        },
+        body: JSON.stringify({ 
+          message: text,
+          user_id: userId,
+          actor_id: userId,
+          session_id: currentSessionId
+        }),
       });
 
       const data = await safeJson(res);
@@ -220,7 +276,7 @@ export default function App() {
       };
 
       setMessages((prev) => [...prev, aiMsg]);
-      fetchSessions(); // Refresh sessions list title & timestamp
+      fetchSessions(userId); // Refresh sessions list title & timestamp
     } catch (err) {
       const errorMsg = {
         role: 'assistant',
@@ -241,6 +297,11 @@ export default function App() {
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('user_id', userId);
+    formData.append('actor_id', userId);
+    if (currentSessionId) {
+      formData.append('session_id', currentSessionId);
+    }
     if (instruction) {
       formData.append('instruction', instruction);
     }
@@ -253,6 +314,10 @@ export default function App() {
       try {
         res = await fetch('/api/upload', {
           method: 'POST',
+          headers: { 
+            'X-User-Id': userId,
+            'X-Actor-Id': userId
+          },
           body: formData,
           signal: controller.signal,
         });
@@ -282,8 +347,8 @@ export default function App() {
       };
 
       setMessages((prev) => [...prev, userMsg, aiMsg]);
-      fetchFiles(); // Refresh file list
-      fetchSessions(); // Refresh sessions list
+      fetchFiles(userId); // Refresh file list for this user
+      fetchSessions(userId); // Refresh sessions list for this user
     } catch (err) {
       const errorMsg = {
         role: 'assistant',
@@ -301,17 +366,22 @@ export default function App() {
     if (isUploading) return;
     setIsUploading(true);
 
-    let payload = {};
+    let payload = {
+      user_id: userId,
+      actor_id: userId,
+      session_id: currentSessionId
+    };
     if (typeof fileInput === 'object' && fileInput !== null) {
       payload = {
+        ...payload,
         doc_id: fileInput.id,
         file_name: fileInput.name,
         file_path: fileInput.path || String(fileInput.id),
       };
     } else if (typeof fileInput === 'number') {
-      payload = { doc_id: fileInput };
+      payload = { ...payload, doc_id: fileInput };
     } else {
-      payload = { file_path: String(fileInput) };
+      payload = { ...payload, file_path: String(fileInput) };
     }
 
     try {
@@ -322,7 +392,11 @@ export default function App() {
       try {
         res = await fetch('/api/select-file', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'X-User-Id': userId,
+            'X-Actor-Id': userId
+          },
           body: JSON.stringify(payload),
           signal: controller.signal,
         });
@@ -351,7 +425,7 @@ export default function App() {
       };
 
       setMessages((prev) => [...prev, userMsg, aiMsg]);
-      fetchSessions();
+      fetchSessions(userId);
     } catch (err) {
       const errorMsg = {
         role: 'assistant',
@@ -367,11 +441,19 @@ export default function App() {
 
   const handleClearChat = async () => {
     try {
-      await fetch('/api/clear', { method: 'POST' });
+      await fetch('/api/clear', { 
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-User-Id': userId,
+          'X-Actor-Id': userId
+        },
+        body: JSON.stringify({ session_id: currentSessionId, user_id: userId, actor_id: userId })
+      });
       setMessages([]);
       setActiveDoc(null);
       setInspectorDoc(null);
-      fetchSessions();
+      fetchSessions(userId);
     } catch (err) {
       console.error('Lỗi khi xóa lịch sử:', err);
     }
@@ -427,6 +509,8 @@ export default function App() {
         activeDoc={activeDoc}
         theme={theme}
         onToggleTheme={toggleTheme}
+        userId={userId}
+        onSwitchUser={handleSwitchUser}
       />
 
       <ChatArea 
